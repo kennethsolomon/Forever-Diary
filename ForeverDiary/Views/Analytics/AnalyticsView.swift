@@ -75,7 +75,7 @@ struct AnalyticsView: View {
         var streak = 0
         var checkDate = Date.now
 
-        while true {
+        while streak < 3650 {
             let key = DiaryEntry.monthDayKey(from: checkDate)
             let year = DiaryEntry.year(from: checkDate)
             let hasEntry = allEntries.contains { $0.monthDayKey == key && $0.year == year }

@@ -21,7 +21,11 @@ struct ForeverDiaryApp: App {
                 isStoredInMemoryOnly: true,
                 cloudKitDatabase: .none
             )
-            container = try! ModelContainer(for: schema, configurations: config)
+            do {
+                container = try ModelContainer(for: schema, configurations: config)
+            } catch {
+                fatalError("Test ModelContainer failed: \(error.localizedDescription)")
+            }
         } else {
             // Try CloudKit first, fall back to local-only if unavailable
             let cloudConfig = ModelConfiguration(
@@ -40,7 +44,13 @@ struct ForeverDiaryApp: App {
             } else if let localContainer = try? ModelContainer(for: schema, configurations: localConfig) {
                 container = localContainer
             } else {
-                fatalError("Failed to create ModelContainer")
+                // Last resort: try in-memory to avoid permanent crash loop
+                let memoryConfig = ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+                if let memoryContainer = try? ModelContainer(for: schema, configurations: memoryConfig) {
+                    container = memoryContainer
+                } else {
+                    fatalError("Failed to create any ModelContainer")
+                }
             }
         }
 
