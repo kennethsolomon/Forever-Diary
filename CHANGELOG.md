@@ -9,13 +9,29 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ## [Unreleased]
 
 ### Added
-
-### Changed
+- Write-first home screen with debounced auto-save and "Saved" indicator
+- Yearless calendar with month carousel and day grid navigation
+- Timeline view showing reverse-chronological entries across years for the same date
+- Entry detail view with diary text, location, photos, and daily check-ins
+- Daily check-in system with boolean, text, and number field types
+- Default habit templates (Mood, Gratitude, Weight, Exercise, Sleep)
+- Photo attachment with compression, thumbnails, and full-screen viewer (max 10 per entry)
+- Location tagging via CoreLocation reverse geocoding
+- Analytics dashboard with current/longest streak, completion rate, and habit charts
+- Settings screen with template management and data export
+- CloudKit auto-sync with local-only and in-memory fallback
+- 31 unit tests covering models, services, and integration
 
 ### Fixed
-
-### Deprecated
-
-### Removed
+- Removed `@Attribute(.unique)` from SwiftData models for CloudKit compatibility
+- Location authorization now uses proper callback continuation instead of fixed sleep
+- Concurrent `fetchLocationString()` calls guarded with `isFetching` flag
+- App container creation uses 3-tier fallback (CloudKit -> local -> in-memory) to prevent crash loops
+- Location saves debounced to prevent excessive I/O on every keystroke
+- Month index bounds-checked before array access to prevent crash on corrupted data
+- Critical save paths use do/catch with error logging instead of silent `try?`
 
 ### Security
+- Test host detection via `NSClassFromString("XCTestCase")` to skip CloudKit in test mode
+- Analytics streak loop bounded to 3,650 iterations
+- Photo size validated against 10MB limit before storage
