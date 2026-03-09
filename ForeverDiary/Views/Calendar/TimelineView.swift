@@ -23,7 +23,8 @@ struct TimelineView: View {
         let parts = monthDayKey.split(separator: "-")
         guard parts.count == 2,
               let month = Int(parts[0]),
-              let day = Int(parts[1]) else { return monthDayKey }
+              let day = Int(parts[1]),
+              month >= 1, month <= 12 else { return monthDayKey }
         let formatter = DateFormatter()
         let monthName = formatter.shortMonthSymbols[month - 1]
         return "\(monthName) \(day)"

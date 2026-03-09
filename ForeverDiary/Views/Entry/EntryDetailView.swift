@@ -20,6 +20,7 @@ struct EntryDetailView: View {
     @State private var showPhotoLimitAlert = false
     @State private var fullScreenPhoto: PhotoAsset?
     @State private var saveTask: Task<Void, Never>?
+    @State private var locationSaveTask: Task<Void, Never>?
     @State private var showSaved = false
 
     @Query private var templates: [CheckInTemplate]
@@ -48,7 +49,8 @@ struct EntryDetailView: View {
             .onAppear {
                 loadEntry()
                 if scrollToCheckIns {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    Task {
+                        try? await Task.sleep(for: .seconds(0.3))
                         withAnimation { proxy.scrollTo("checkIns", anchor: .top) }
                     }
                 }
@@ -80,7 +82,8 @@ struct EntryDetailView: View {
         let parts = monthDayKey.split(separator: "-")
         guard parts.count == 2,
               let month = Int(parts[0]),
-              let day = Int(parts[1]) else { return monthDayKey }
+              let day = Int(parts[1]),
+              month >= 1, month <= 12 else { return monthDayKey }
         let formatter = DateFormatter()
         let monthName = formatter.monthSymbols[month - 1]
         return "\(monthName) \(day)"
@@ -114,7 +117,7 @@ struct EntryDetailView: View {
                     .font(.system(.subheadline, design: .rounded))
                     .foregroundStyle(Color("textSecondary"))
                     .onSubmit { saveLocation() }
-                    .onChange(of: locationText) { _, _ in saveLocation() }
+                    .onChange(of: locationText) { _, _ in debounceLocationSave() }
             }
         }
     }
@@ -315,7 +318,11 @@ struct EntryDetailView: View {
             weekday: DiaryEntry.weekdayName(from: date)
         )
         modelContext.insert(newEntry)
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            print("[ForeverDiary] Entry creation save failed: \(error.localizedDescription)")
+        }
         self.entry = newEntry
         return newEntry
     }
@@ -329,13 +336,26 @@ struct EntryDetailView: View {
                 let e = ensureEntry()
                 e.diaryText = text
                 e.updatedAt = .now
-                try? modelContext.save()
-                withAnimation { showSaved = true }
-                Task {
-                    try? await Task.sleep(for: .seconds(1.5))
-                    await MainActor.run { withAnimation { showSaved = false } }
+                do {
+                    try modelContext.save()
+                    withAnimation { showSaved = true }
+                    Task {
+                        try? await Task.sleep(for: .seconds(1.5))
+                        await MainActor.run { withAnimation { showSaved = false } }
+                    }
+                } catch {
+                    print("[ForeverDiary] Diary save failed: \(error.localizedDescription)")
                 }
             }
+        }
+    }
+
+    private func debounceLocationSave() {
+        locationSaveTask?.cancel()
+        locationSaveTask = Task {
+            try? await Task.sleep(for: .seconds(0.5))
+            guard !Task.isCancelled else { return }
+            await MainActor.run { saveLocation() }
         }
     }
 
@@ -343,7 +363,11 @@ struct EntryDetailView: View {
         guard let entry else { return }
         entry.locationText = locationText.isEmpty ? nil : locationText
         entry.updatedAt = .now
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            print("[ForeverDiary] Location save failed: \(error.localizedDescription)")
+        }
     }
 
     private func checkInValue(for template: CheckInTemplate) -> CheckInValue? {

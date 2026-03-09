@@ -196,18 +196,21 @@ struct HomeView: View {
             self.entry = newEntry
         }
 
-        try? modelContext.save()
-
-        withAnimation(.easeInOut(duration: 0.3)) {
-            showSavedIndicator = true
-        }
-        Task {
-            try? await Task.sleep(for: .seconds(1.5))
-            await MainActor.run {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    showSavedIndicator = false
+        do {
+            try modelContext.save()
+            withAnimation(.easeInOut(duration: 0.3)) {
+                showSavedIndicator = true
+            }
+            Task {
+                try? await Task.sleep(for: .seconds(1.5))
+                await MainActor.run {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        showSavedIndicator = false
+                    }
                 }
             }
+        } catch {
+            print("[ForeverDiary] Home save failed: \(error.localizedDescription)")
         }
     }
 }

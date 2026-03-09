@@ -125,4 +125,24 @@ final class DiaryEntryTests: XCTestCase {
         let entry = DiaryEntry(monthDayKey: "03-10", year: 2026, weekday: "Tuesday")
         XCTAssertEqual(entry.completedCheckIns, 0)
     }
+
+    func testCompletedCheckInsCountsMixedValues() {
+        let entry = DiaryEntry(monthDayKey: "03-10", year: 2026, weekday: "Tuesday")
+
+        let boolTrue = CheckInValue(templateId: UUID(), boolValue: true)
+        boolTrue.entry = entry
+        let boolFalse = CheckInValue(templateId: UUID(), boolValue: false)
+        boolFalse.entry = entry
+        let textFilled = CheckInValue(templateId: UUID(), textValue: "Happy")
+        textFilled.entry = entry
+        let textEmpty = CheckInValue(templateId: UUID(), textValue: "")
+        textEmpty.entry = entry
+        let number = CheckInValue(templateId: UUID(), numberValue: 7.5)
+        number.entry = entry
+
+        entry.checkInValues = [boolTrue, boolFalse, textFilled, textEmpty, number]
+
+        // boolTrue=yes, boolFalse=no, textFilled=yes, textEmpty=no, number=yes → 3
+        XCTAssertEqual(entry.completedCheckIns, 3)
+    }
 }
