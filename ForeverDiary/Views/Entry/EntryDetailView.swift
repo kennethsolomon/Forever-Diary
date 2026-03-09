@@ -238,7 +238,7 @@ struct EntryDetailView: View {
                     .foregroundStyle(Color("textPrimary"))
 
                 if let entry {
-                    Text("(\(entry.photoAssets.count))")
+                    Text("(\(entry.safePhotoAssets.count))")
                         .font(.system(.subheadline, design: .rounded))
                         .foregroundStyle(Color("textSecondary"))
                 }
@@ -247,7 +247,7 @@ struct EntryDetailView: View {
 
                 PhotosPicker(
                     selection: $selectedPhotos,
-                    maxSelectionCount: max(0, PhotoAsset.maxPhotosPerEntry - (entry?.photoAssets.count ?? 0)),
+                    maxSelectionCount: max(0, PhotoAsset.maxPhotosPerEntry - (entry?.safePhotoAssets.count ?? 0)),
                     matching: .images
                 ) {
                     Image(systemName: "plus.circle.fill")
@@ -260,9 +260,9 @@ struct EntryDetailView: View {
                 }
             }
 
-            if let entry, !entry.photoAssets.isEmpty {
+            if let entry, !entry.safePhotoAssets.isEmpty {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-                    ForEach(entry.photoAssets.sorted(by: { $0.createdAt < $1.createdAt })) { photo in
+                    ForEach(entry.safePhotoAssets.sorted(by: { $0.createdAt < $1.createdAt })) { photo in
                         if let uiImage = UIImage(data: photo.thumbnailData) {
                             Image(uiImage: uiImage)
                                 .resizable()
@@ -347,12 +347,12 @@ struct EntryDetailView: View {
     }
 
     private func checkInValue(for template: CheckInTemplate) -> CheckInValue? {
-        entry?.checkInValues.first { $0.templateId == template.id }
+        entry?.safeCheckInValues.first { $0.templateId == template.id }
     }
 
     private func updateCheckIn(template: CheckInTemplate, bool: Bool? = nil, text: String? = nil, number: Double? = nil) {
         let e = ensureEntry()
-        if let existing = e.checkInValues.first(where: { $0.templateId == template.id }) {
+        if let existing = e.safeCheckInValues.first(where: { $0.templateId == template.id }) {
             existing.boolValue = bool ?? existing.boolValue
             existing.textValue = text ?? existing.textValue
             existing.numberValue = number ?? existing.numberValue
@@ -368,7 +368,7 @@ struct EntryDetailView: View {
     private func addPhotos(from items: [PhotosPickerItem]) async {
         let e = ensureEntry()
         for item in items {
-            guard e.photoAssets.count < PhotoAsset.maxPhotosPerEntry else {
+            guard e.safePhotoAssets.count < PhotoAsset.maxPhotosPerEntry else {
                 await MainActor.run { showPhotoLimitAlert = true }
                 break
             }

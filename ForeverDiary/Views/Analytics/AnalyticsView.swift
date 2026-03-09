@@ -203,7 +203,7 @@ struct AnalyticsView: View {
             } else {
                 ForEach(templates) { template in
                     let completed = periodEntries.filter { entry in
-                        entry.checkInValues.contains { value in
+                        entry.safeCheckInValues.contains { value in
                             guard value.templateId == template.id else { return false }
                             if let b = value.boolValue { return b }
                             if let t = value.textValue { return !t.isEmpty }

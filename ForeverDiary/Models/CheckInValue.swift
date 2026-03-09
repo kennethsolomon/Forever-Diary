@@ -3,11 +3,11 @@ import SwiftData
 
 @Model
 final class CheckInValue {
-    @Attribute(.unique) var id: UUID
+    var id: UUID = UUID()
     var boolValue: Bool?
     var textValue: String?
     var numberValue: Double?
-    var templateId: UUID
+    var templateId: UUID = UUID()
 
     var entry: DiaryEntry?
 

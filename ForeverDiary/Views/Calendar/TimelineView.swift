@@ -140,13 +140,13 @@ struct YearCard: View {
             }
 
             HStack(spacing: 12) {
-                if !entry.photoAssets.isEmpty {
-                    Label("\(entry.photoAssets.count)", systemImage: "photo")
+                if !entry.safePhotoAssets.isEmpty {
+                    Label("\(entry.safePhotoAssets.count)", systemImage: "photo")
                         .font(.system(.caption, design: .rounded))
                         .foregroundStyle(Color("textSecondary"))
                 }
 
-                let total = entry.checkInValues.count
+                let total = entry.safeCheckInValues.count
                 if total > 0 {
                     Label(
                         "\(entry.completedCheckIns)/\(total)",

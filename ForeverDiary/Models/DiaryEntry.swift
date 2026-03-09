@@ -3,20 +3,20 @@ import SwiftData
 
 @Model
 final class DiaryEntry {
-    var monthDayKey: String
-    var year: Int
-    var date: Date
-    var weekday: String
-    var diaryText: String
+    var monthDayKey: String = ""
+    var year: Int = 0
+    var date: Date = Date.now
+    var weekday: String = ""
+    var diaryText: String = ""
     var locationText: String?
-    var createdAt: Date
-    var updatedAt: Date
+    var createdAt: Date = Date.now
+    var updatedAt: Date = Date.now
 
     @Relationship(deleteRule: .cascade, inverse: \CheckInValue.entry)
-    var checkInValues: [CheckInValue] = []
+    var checkInValues: [CheckInValue]? = []
 
     @Relationship(deleteRule: .cascade, inverse: \PhotoAsset.entry)
-    var photoAssets: [PhotoAsset] = []
+    var photoAssets: [PhotoAsset]? = []
 
     init(
         monthDayKey: String,
@@ -56,9 +56,21 @@ final class DiaryEntry {
         Calendar.current.component(.year, from: date)
     }
 
+    /// Safe accessor for check-in values (unwraps optional for CloudKit compat)
+    var safeCheckInValues: [CheckInValue] {
+        get { checkInValues ?? [] }
+        set { checkInValues = newValue }
+    }
+
+    /// Safe accessor for photo assets (unwraps optional for CloudKit compat)
+    var safePhotoAssets: [PhotoAsset] {
+        get { photoAssets ?? [] }
+        set { photoAssets = newValue }
+    }
+
     /// Habit completion count
     var completedCheckIns: Int {
-        checkInValues.filter { value in
+        safeCheckInValues.filter { value in
             if let b = value.boolValue { return b }
             if let t = value.textValue { return !t.isEmpty }
             if value.numberValue != nil { return true }

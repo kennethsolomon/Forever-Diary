@@ -3,15 +3,15 @@ import SwiftData
 
 @Model
 final class PhotoAsset {
-    @Attribute(.unique) var id: UUID
+    var id: UUID = UUID()
 
     @Attribute(.externalStorage)
-    var imageData: Data
+    var imageData: Data = Data()
 
     @Attribute(.externalStorage)
-    var thumbnailData: Data
+    var thumbnailData: Data = Data()
 
-    var createdAt: Date
+    var createdAt: Date = Date.now
 
     var entry: DiaryEntry?
 

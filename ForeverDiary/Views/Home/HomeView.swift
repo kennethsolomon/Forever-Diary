@@ -124,7 +124,7 @@ struct HomeView: View {
                 showPhotoPicker = true
             } label: {
                 Label(
-                    "\(entry?.photoAssets.count ?? 0)",
+                    "\(entry?.safePhotoAssets.count ?? 0)",
                     systemImage: "photo"
                 )
                 .font(.system(.caption, design: .rounded))

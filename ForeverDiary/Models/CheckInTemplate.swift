@@ -3,11 +3,11 @@ import SwiftData
 
 @Model
 final class CheckInTemplate {
-    @Attribute(.unique) var id: UUID
-    var label: String
-    var type: CheckInFieldType
-    var isActive: Bool
-    var sortOrder: Int
+    var id: UUID = UUID()
+    var label: String = ""
+    var type: CheckInFieldType = CheckInFieldType.text
+    var isActive: Bool = true
+    var sortOrder: Int = 0
 
     init(
         id: UUID = UUID(),
