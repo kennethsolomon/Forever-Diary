@@ -9,9 +9,9 @@
 | 2 | /frontend-design | skipped | bug fix, no UI changes |
 | 3 | /write-plan | done | 2 phases, 2 files, approved |
 | 4 | /execute-plan | done | 2 files changed, BUILD SUCCEEDED, 58/58 tests pass |
-| 5 | /commit | >> next << | |
-| 6 | /write-tests | not yet | |
-| 7 | /commit | not yet | conditional |
+| 5 | /commit | done | 0b616c4 fix(calendar), c5a2543 chore(tasks) |
+| 6 | /write-tests | done | 9 new tests, 67/67 pass |
+| 7 | /commit | >> next << | conditional |
 | 8 | /debug | not yet | optional |
 | 9 | /security-check | not yet | loop |
 | 10 | /commit | not yet | conditional |
