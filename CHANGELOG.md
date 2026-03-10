@@ -27,6 +27,14 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Debounced sync triggered automatically on data changes
 - Settings screen shows sync status, last sync time, and manual sync button
 - 58 unit tests covering models, services, and cloud sync
+- Dark/light theme system with System/Light/Dark toggle in Settings
+- Dark palette: #222831/#393E46/#00ADB5/#EEEEEE; Light: clean white + teal accent
+- Calendar redesigned as photo-rich 7-column grid with circular thumbnails and collage circles
+- Day summary sheet with year entry cards, "Add Entry" button, and sheet-to-navigation handoff
+- Apple Notes-style view/write mode toggle on Home and EntryDetailView
+- Markdown rendering in view mode (bold, italic, strikethrough, code, bullet lists)
+- Tap-to-edit gesture on rendered markdown switches back to write mode
+- 90 unit tests (theme, markdown parsing, calendar navigation)
 
 ### Fixed
 - Calendar navigation freeze when tapping any date — replaced NavigationLink with programmatic navigation to avoid gesture conflict with paged TabView
