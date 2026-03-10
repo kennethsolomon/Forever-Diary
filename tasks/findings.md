@@ -1,77 +1,40 @@
-# Forever Diary — Cloud Sync Feature Findings
+# Forever Diary — Calendar Navigation Freeze Bug
 
 ## Problem Statement
-App data is lost on reinstall. User reinstalls weekly on personal device with a free Apple Developer account (no CloudKit). Need cloud persistence for diary entries and photos.
+App freezes when tapping any day in the Calendar tab. Both new and existing entries cause an immediate freeze requiring app restart. The Home tab's navigation to EntryDetailView works fine.
 
 ## Key Decisions
 
-### Backend: All-AWS
-- **DynamoDB** for structured data (entries, check-ins, templates)
-- **S3** for photo storage (JPEG blobs)
-- **Cognito** for anonymous device-based auth (no login screen)
-- **API Gateway + Lambda** for presigned S3 URLs and sync API
-- Rationale: single ecosystem, user has existing AWS account, 25GB DynamoDB free forever, ~$0.50/month after year 1
+### Root Cause: NavigationLink inside paged TabView inside NavigationStack
+- `CalendarBrowserView.swift:10-18` wraps a `TabView(.page)` inside a `NavigationStack`
+- `MonthPageView` (child of the paged TabView) uses `NavigationLink` for each day row
+- The paged TabView's swipe gesture recognizers conflict with NavigationLink's tap gesture, causing the UI to freeze on tap
+- This is a known SwiftUI issue — NavigationLink and paged TabView gesture recognizers are incompatible
 
-### Architecture: Offline-first with background sync
-```
-SwiftUI Views
-    ↓ @Query
-SwiftData (local, offline-first, source of truth for UI)
-    ↓ SyncService (background)
-Cognito (identity) → API Gateway → Lambda → DynamoDB + S3
-```
+### Evidence
+- HomeView works fine — its NavigationStack has no paged TabView
+- Freeze is immediate on tap — not triggered by any data operation
+- Both new and existing entries freeze — navigation/gesture problem, not data
+- TimelineView → EntryDetailView NavigationLinks may also be affected (nested 2 levels deep)
 
-### Sync Strategy
-- SwiftData remains the local source of truth — all reads come from SwiftData
-- SyncService runs in background: pushes local changes to AWS, pulls remote changes on app launch / reinstall
-- Conflict resolution: last-write-wins based on `updatedAt` timestamp
-- Photos: upload to S3 via presigned URL, store S3 key in DynamoDB and SwiftData
-- On reinstall: Cognito restores identity → pull DynamoDB entries → lazy-download photos from S3
-
-### Data Flow
-- **Write path:** User edits → SwiftData save → mark dirty → SyncService uploads to DynamoDB/S3
-- **Read path (normal):** SwiftData @Query (no network)
-- **Read path (restore):** Cognito auth → DynamoDB scan → insert into SwiftData → S3 photo download (lazy)
-
-### DynamoDB Schema
-- **Table: diary-entries** — PK: `userId`, SK: `{monthDayKey}#{year}` — stores text, location, weekday, timestamps
-- **Table: check-in-values** — PK: `userId`, SK: `{entryKey}#{templateId}` — stores bool/text/number values
-- **Table: check-in-templates** — PK: `userId`, SK: `{templateId}` — stores label, type, isActive, sortOrder
-- **Table: photo-assets** — PK: `userId`, SK: `{entryKey}#{photoId}` — stores S3 key, createdAt
-
-### S3 Structure
-- Bucket: `forever-diary-photos`
-- Key pattern: `{userId}/{monthDayKey}-{year}/{photoId}.jpg`
-- Thumbnails: `{userId}/{monthDayKey}-{year}/{photoId}_thumb.jpg`
-
-### Auth
-- Cognito Identity Pool with unauthenticated access (anonymous)
-- Device gets a stable `identityId` — used as `userId` partition key
-- Future: add Apple Sign-In as an authenticated provider for cross-device sync
-
-### SwiftData Changes
-- Add `syncStatus` field to models: `.synced`, `.pending`, `.conflict`
-- Add `lastSyncedAt` timestamp
-- SyncService queries for `.pending` items and uploads them
-
-### Lambda Functions
-- `generatePresignedUrl` — returns S3 upload/download URL for photos
-- `syncEntries` — batch upsert/fetch entries from DynamoDB
-- Optional: could use API Gateway direct DynamoDB integration to skip Lambda for simple CRUD
-
-### Security Constraints
-- No AWS credentials in the app — all access via Cognito temporary credentials
-- S3 bucket policy: users can only read/write their own `{userId}/` prefix
-- DynamoDB: partition key = `userId`, enforced by IAM policy on Cognito role
-- Presigned URLs expire after 15 minutes
+### Secondary Issue: Self-destructing NavigationLink for "Add Entry"
+- `TimelineView.swift:40-58` wraps "Add Entry" NavigationLink in `if !hasCurrentYearEntry`
+- When `ensureEntry()` saves a new entry, `@Query` re-evaluates, `hasCurrentYearEntry` becomes true
+- The NavigationLink that pushed EntryDetailView is removed from the view hierarchy
+- This would cause navigation instability after creating a new entry (separate from the freeze)
 
 ## Chosen Approach & Rationale
-All-AWS with offline-first SwiftData. Single ecosystem, generous free tier (25GB DynamoDB forever, ~$0.50/month for S3 after year 1). SwiftData stays as local cache — no UI changes needed. SyncService is a new background layer that pushes/pulls data.
+**Approach B (revised): Programmatic navigation + eager entry creation**
+
+1. **MonthPageView**: Replace `NavigationLink` with `Button` + programmatic `navigationDestination(for:)` to avoid gesture conflict with paged TabView
+2. **TimelineView**: Same pattern — `Button` + `navigationDestination(for:)` for consistency
+3. **"Add Entry"**: Create the entry eagerly before navigating, so it appears in the ForEach list and uses a stable NavigationLink path
+
+Rationale: Avoids the known SwiftUI gesture conflict entirely. Programmatic navigation via `@State` path is the recommended pattern for NavigationStack. Small complexity — mechanical replacement of NavigationLink with Button + navigationDestination.
+
+## Files to Modify
+- `ForeverDiary/Views/Calendar/CalendarBrowserView.swift` — add `@State` navigation path, add `.navigationDestination`, replace NavigationLinks in MonthPageView with Buttons
+- `ForeverDiary/Views/Calendar/TimelineView.swift` — replace NavigationLinks with Buttons + navigationDestination, add eager entry creation for "Add Entry"
 
 ## Open Questions
 - None — direction is locked in.
-
-## Out of Scope
-- Real-time collaborative sync (single user app)
-- Cross-device conflict resolution UI (last-write-wins is sufficient)
-- Photo editing/cropping in cloud

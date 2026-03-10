@@ -29,6 +29,9 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - 58 unit tests covering models, services, and cloud sync
 
 ### Fixed
+- Calendar navigation freeze when tapping any date — replaced NavigationLink with programmatic navigation to avoid gesture conflict with paged TabView
+- Renamed TimelineView to DayTimelineView to avoid SwiftUI naming conflict
+- "Add Entry" now eagerly creates the entry before navigating to prevent self-destructing NavigationLink
 - Removed `@Attribute(.unique)` from SwiftData models for CloudKit compatibility
 - Location authorization now uses proper callback continuation instead of fixed sleep
 - Concurrent `fetchLocationString()` calls guarded with `isFetching` flag

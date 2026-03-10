@@ -1,8 +1,9 @@
 import SwiftUI
 import SwiftData
 
-struct TimelineView: View {
+struct DayTimelineView: View {
     let monthDayKey: String
+    @Binding var navigationPath: NavigationPath
 
     @Environment(\.modelContext) private var modelContext
     @Query private var entries: [DiaryEntry]
@@ -12,8 +13,9 @@ struct TimelineView: View {
 
     private let currentYear = Calendar.current.component(.year, from: .now)
 
-    init(monthDayKey: String) {
+    init(monthDayKey: String, navigationPath: Binding<NavigationPath>) {
         self.monthDayKey = monthDayKey
+        self._navigationPath = navigationPath
         let key = monthDayKey
         let yearSort = SortDescriptor<DiaryEntry>(\.year, order: .reverse)
         _entries = Query(filter: #Predicate<DiaryEntry> { $0.monthDayKey == key }, sort: [yearSort])
@@ -38,8 +40,8 @@ struct TimelineView: View {
         ScrollView {
             LazyVStack(spacing: 12) {
                 if !hasCurrentYearEntry {
-                    NavigationLink {
-                        EntryDetailView(monthDayKey: monthDayKey, year: currentYear)
+                    Button {
+                        createAndNavigateToEntry()
                     } label: {
                         HStack {
                             Image(systemName: "plus.circle.fill")
@@ -58,8 +60,8 @@ struct TimelineView: View {
                 }
 
                 ForEach(Array(entries.enumerated()), id: \.element.persistentModelID) { index, entry in
-                    NavigationLink {
-                        EntryDetailView(monthDayKey: entry.monthDayKey, year: entry.year)
+                    Button {
+                        navigationPath.append(EntryDestination(monthDayKey: entry.monthDayKey, year: entry.year))
                     } label: {
                         YearCard(entry: entry)
                             .transition(.opacity)
@@ -100,6 +102,26 @@ struct TimelineView: View {
                 Text("This will permanently delete your \(entryToDelete.year) entry and all its photos and check-ins.")
             }
         }
+    }
+
+    private func createAndNavigateToEntry() {
+        let parts = monthDayKey.split(separator: "-")
+        var components = DateComponents()
+        components.month = Int(parts[0])
+        components.day = Int(parts[1])
+        components.year = currentYear
+        let date = Calendar.current.date(from: components) ?? .now
+
+        let newEntry = DiaryEntry(
+            monthDayKey: monthDayKey,
+            year: currentYear,
+            date: date,
+            weekday: DiaryEntry.weekdayName(from: date)
+        )
+        modelContext.insert(newEntry)
+        try? modelContext.save()
+
+        navigationPath.append(EntryDestination(monthDayKey: monthDayKey, year: currentYear))
     }
 }
 
