@@ -264,6 +264,62 @@ _None found._
 
 ---
 
+# Security Audit — 2026-03-10 (Calendar UI + Theme + View Mode)
+
+**Scope:** Changed files on branch `fix/calendar-navigation-freeze` (UI redesign batch)
+**Stack:** Swift / SwiftUI (iOS 17+)
+**Files audited:** 10 (CalendarBrowserView.swift, TimelineView.swift, ContentView.swift, HomeView.swift, EntryDetailView.swift, SettingsView.swift, CalendarNavigationTests.swift, ThemeTests.swift, MarkdownTests.swift, 7 color asset JSONs)
+
+## Critical (must fix before deploy)
+
+_None found._
+
+## High (fix before production)
+
+_None found._
+
+## Medium (should fix)
+
+_None found._
+
+## Low / Informational
+
+- **[TimelineView.swift:109]** `try? modelContext.save()` silently swallows delete error
+  **Standard:** Informational — CWE-390 (Detection of Error Condition Without Action)
+  **Risk:** If deleting an entry fails (e.g., concurrent modification), the user sees no feedback. Minimal risk for single-user local app.
+  **Recommendation:** No action needed — consistent with existing codebase pattern (accepted in prior audit).
+
+- **[CalendarBrowserView.swift:39]** `DispatchQueue.main.asyncAfter(deadline: .now() + 0.1)` for scroll-to-month timing
+  **Standard:** Informational — timing-dependent behavior
+  **Risk:** No security risk. UI timing workaround for ScrollViewReader readiness.
+  **Recommendation:** No action needed.
+
+## Passed Checks
+
+- **A01 Broken Access Control** — No auth logic changed. `@AppStorage("appTheme")` stores non-sensitive display preference.
+- **A02 Cryptographic Failures** — No cryptographic operations. Theme preference stored via UserDefaults — appropriate for non-sensitive data.
+- **A03 Injection** — SwiftData `#Predicate` macros are type-safe. `AttributedString(markdown:)` is Apple's safe parser — no HTML injection risk.
+- **A04 Insecure Design** — Calendar grid uses computed data from Calendar API. No unbounded operations.
+- **A05 Security Misconfiguration** — AppTheme enum has exhaustive cases with fallback to `.system`.
+- **A06 Vulnerable Components** — No new dependencies. All Apple frameworks.
+- **A08 Data Integrity** — `DaySheetItem` and `EntryDestination` are immutable value types. `parseMarkdown()` is a pure function.
+- **A09 Logging** — No new logging. No PII exposure.
+- **XSS** — N/A (native SwiftUI). `MarkdownTextView` uses `AttributedString(markdown:)` — safe by design.
+- **Input Validation** — `formattedTitle` validates month range before array access. Theme picker uses enum values with fallback.
+- **Test files** — No secrets, no network calls, no PII.
+
+## Summary
+
+| Severity | Count |
+|----------|-------|
+| Critical | 0 |
+| High     | 0 |
+| Medium   | 0 |
+| Low      | 2 |
+| **Total** | **2** |
+
+---
+
 # Security Audit — 2026-03-10 (Calendar Navigation Fix)
 
 **Scope:** Changed files on branch `fix/calendar-navigation-freeze`
