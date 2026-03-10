@@ -15,7 +15,7 @@
 | 8 | /debug | skipped | user skipped |
 | 9 | /security-check | done | clean on attempt 1 |
 | 10 | /commit | done | 08d9421 chore(tasks) |
-| 11 | /review | >> next << | loop |
-| 12 | /commit | not yet | conditional |
-| 13 | /finish-feature | not yet | |
+| 11 | /review | done | clean on attempt 2 (nitpicks fixed) |
+| 12 | /commit | done | 1a635a6 refactor, e6890e5 chore |
+| 13 | /finish-feature | >> next << | |
 | 14 | /release | not yet | optional |
