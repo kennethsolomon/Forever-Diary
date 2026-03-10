@@ -13,9 +13,9 @@
 | 6 | /write-tests | done | 27 new tests, 58/58 pass |
 | 7 | /commit | done | 2e42fec test(sync) |
 | 8 | /debug | skipped | user skipped |
-| 9 | /security-check | >> next << | |
-| 10 | /commit | not yet | conditional |
-| 11 | /review | not yet | loop until 0 issues |
+| 9 | /security-check | done | clean on attempt 2 |
+| 10 | /commit | done | db083d2 fix(security) |
+| 11 | /review | >> next << | attempt 1: 2 critical, 3 warning, 4 nitpick |
 | 12 | /commit | not yet | conditional |
 | 13 | /finish-feature | not yet | |
 | 14 | /release | not yet | optional |

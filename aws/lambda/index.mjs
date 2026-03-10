@@ -77,12 +77,28 @@ async function handleSyncPush(userId, body) {
       };
     });
 
-    await dynamo.send(
+    const result = await dynamo.send(
       new BatchWriteItemCommand({
         RequestItems: { [TABLE]: requests },
       })
     );
-    written += batch.length;
+
+    // Retry unprocessed items with exponential backoff
+    let unprocessed = result.UnprocessedItems?.[TABLE] || [];
+    for (let attempt = 1; unprocessed.length > 0 && attempt <= 3; attempt++) {
+      await new Promise((r) => setTimeout(r, 100 * Math.pow(2, attempt)));
+      const retry = await dynamo.send(
+        new BatchWriteItemCommand({
+          RequestItems: { [TABLE]: unprocessed },
+        })
+      );
+      unprocessed = retry.UnprocessedItems?.[TABLE] || [];
+    }
+    if (unprocessed.length > 0) {
+      console.warn(`${unprocessed.length} items unprocessed after retries`);
+    }
+
+    written += batch.length - unprocessed.length;
   }
 
   return respond(200, { written });

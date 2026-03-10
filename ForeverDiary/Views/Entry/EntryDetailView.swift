@@ -23,7 +23,6 @@ struct EntryDetailView: View {
     @State private var saveTask: Task<Void, Never>?
     @State private var locationSaveTask: Task<Void, Never>?
     @State private var showSaved = false
-    @State private var syncDebounceTask: Task<Void, Never>?
 
     @Query private var templates: [CheckInTemplate]
 
@@ -338,10 +337,10 @@ struct EntryDetailView: View {
                 let e = ensureEntry()
                 e.diaryText = text
                 e.updatedAt = .now
-                e.syncStatus = "pending"
+                e.syncStatus = SyncStatus.pending
                 do {
                     try modelContext.save()
-                    triggerDebouncedSync()
+                    syncService.scheduleDebouncedSync()
                     withAnimation { showSaved = true }
                     Task {
                         try? await Task.sleep(for: .seconds(1.5))
@@ -367,10 +366,10 @@ struct EntryDetailView: View {
         guard let entry else { return }
         entry.locationText = locationText.isEmpty ? nil : locationText
         entry.updatedAt = .now
-        entry.syncStatus = "pending"
+        entry.syncStatus = SyncStatus.pending
         do {
             try modelContext.save()
-            triggerDebouncedSync()
+            syncService.scheduleDebouncedSync()
         } catch {
             print("[ForeverDiary] Location save failed: \(error.localizedDescription)")
         }
@@ -394,16 +393,7 @@ struct EntryDetailView: View {
         e.updatedAt = .now
         e.syncStatus = "pending"
         try? modelContext.save()
-        triggerDebouncedSync()
-    }
-
-    private func triggerDebouncedSync() {
-        syncDebounceTask?.cancel()
-        syncDebounceTask = Task {
-            try? await Task.sleep(for: .seconds(5))
-            guard !Task.isCancelled else { return }
-            await syncService.syncAll()
-        }
+        syncService.scheduleDebouncedSync()
     }
 
     private func addPhotos(from items: [PhotosPickerItem]) async {

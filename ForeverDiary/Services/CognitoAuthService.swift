@@ -54,7 +54,7 @@ final class CognitoAuthService {
     // MARK: - Cognito REST API
 
     private func getOrCreateIdentity() async throws -> String {
-        // If we have a stored identity, verify it still works by getting credentials
+        // If we have a stored identity, return it. Credentials are fetched separately.
         if let stored = identityId {
             return stored
         }

@@ -75,6 +75,7 @@ struct ForeverDiaryApp: App {
 
         do {
             _ = try await authService.authenticate()
+            // Brief delay to let UI settle before background sync
             try? await Task.sleep(for: .seconds(2))
             await syncService.syncAll()
         } catch {
