@@ -14,8 +14,8 @@
 | 7 | /commit | done | 70f6f58 test(calendar), c642e59 chore(tasks) |
 | 8 | /debug | skipped | user skipped |
 | 9 | /security-check | done | clean on attempt 1 |
-| 10 | /commit | >> next << | conditional — auto-skip if security was clean |
-| 11 | /review | not yet | loop |
+| 10 | /commit | done | 08d9421 chore(tasks) |
+| 11 | /review | >> next << | loop |
 | 12 | /commit | not yet | conditional |
 | 13 | /finish-feature | not yet | |
 | 14 | /release | not yet | optional |
