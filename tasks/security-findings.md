@@ -261,3 +261,48 @@ _None found._
 | Medium   | 0 |
 | Low      | 0 |
 | **Total** | **0** |
+
+---
+
+# Security Audit — 2026-03-10 (Calendar Navigation Fix)
+
+**Scope:** Changed files on branch `fix/calendar-navigation-freeze`
+**Stack:** Swift / SwiftUI (iOS 17+)
+**Files audited:** 3 (CalendarBrowserView.swift, TimelineView.swift, CalendarNavigationTests.swift)
+
+## Critical (must fix before deploy)
+
+_None found._
+
+## High (fix before production)
+
+_None found._
+
+## Medium (should fix)
+
+_None found._
+
+## Low / Informational
+
+_None found._
+
+## Passed Checks
+
+- **A01 Broken Access Control** — No auth logic changed. Navigation values (monthDayKey, year) are computed internally, not user-supplied.
+- **A03 Injection** — SwiftData `#Predicate` macros are type-safe. No string interpolation in queries. `monthDayKey` is generated from `String(format:)` with integer inputs.
+- **A04 Insecure Design** — `createAndNavigateToEntry()` creates entries via modelContext with fixed schema values. No unbounded operations.
+- **A05 Security Misconfiguration** — No new configuration. Navigation patterns follow SwiftUI best practices.
+- **A08 Data Integrity** — `EntryDestination` is an immutable `let` struct. Entry creation uses typed SwiftData model. `try? modelContext.save()` consistent with existing codebase pattern (prior audit accepted).
+- **A09 Logging** — No logging added. No PII exposure.
+- **XSS** — N/A (native SwiftUI, no web views)
+- **Test file** — CalendarNavigationTests.swift uses in-memory containers with `cloudKitDatabase: .none`, follows established test conventions. No secrets or PII.
+
+## Summary
+
+| Severity | Count |
+|----------|-------|
+| Critical | 0 |
+| High     | 0 |
+| Medium   | 0 |
+| Low      | 0 |
+| **Total** | **0** |

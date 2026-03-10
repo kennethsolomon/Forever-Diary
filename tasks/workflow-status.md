@@ -11,10 +11,10 @@
 | 4 | /execute-plan | done | 2 files changed, BUILD SUCCEEDED, 58/58 tests pass |
 | 5 | /commit | done | 0b616c4 fix(calendar), c5a2543 chore(tasks) |
 | 6 | /write-tests | done | 9 new tests, 67/67 pass |
-| 7 | /commit | >> next << | conditional |
-| 8 | /debug | not yet | optional |
-| 9 | /security-check | not yet | loop |
-| 10 | /commit | not yet | conditional |
+| 7 | /commit | done | 70f6f58 test(calendar), c642e59 chore(tasks) |
+| 8 | /debug | skipped | user skipped |
+| 9 | /security-check | done | clean on attempt 1 |
+| 10 | /commit | >> next << | conditional — auto-skip if security was clean |
 | 11 | /review | not yet | loop |
 | 12 | /commit | not yet | conditional |
 | 13 | /finish-feature | not yet | |
