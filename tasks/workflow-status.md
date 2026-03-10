@@ -17,5 +17,5 @@
 | 10 | /commit | done | 08d9421 chore(tasks) |
 | 11 | /review | done | clean on attempt 2 (nitpicks fixed) |
 | 12 | /commit | done | 1a635a6 refactor, e6890e5 chore |
-| 13 | /finish-feature | >> next << | |
-| 14 | /release | not yet | optional |
+| 13 | /finish-feature | done | PR #1 created, 69/69 tests, changelog updated |
+| 14 | /release | >> next << | optional |
