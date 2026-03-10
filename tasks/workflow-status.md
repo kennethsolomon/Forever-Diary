@@ -5,17 +5,17 @@
 
 | # | Step | Status | Notes |
 |---|------|--------|-------|
-| 1 | /brainstorm | done | 3 features: calendar grid, theme system, view/write mode |
-| 2 | /frontend-design | done | calendar grid, theme system, view/write mode — full spec |
-| 3 | /write-plan | done | 4 phases, 24 steps, approved |
-| 4 | /execute-plan | done | 4 phases complete, 69/69 tests pass, BUILD SUCCEEDED |
-| 5 | /commit | done | 4 commits: theme, calendar, editor, tasks |
-| 6 | /write-tests | done | 20 new tests (7 theme, 13 markdown), 89/89 pass |
-| 7 | /commit | done | test(tests): add theme and markdown parsing tests |
-| 8 | /debug | skipped | user skipped |
-| 9 | /security-check | done | clean — 0 critical/high/medium, 2 low (informational) |
-| 10 | /commit | done | security fixes + review fixes |
-| 11 | /review | done | clean on attempt 2 (2 warnings + 3 nitpicks fixed) |
-| 12 | /commit | done | refactor: address review findings |
-| 13 | /finish-feature | >> next << | |
+| 1 | /brainstorm | done | 4 features: remove view toggle, paginated photo gallery, stacked calendar cards, Sign in with Apple |
+| 2 | /frontend-design | done | Sign In screen, calendar cards, gallery viewer, settings edit icon |
+| 3 | /write-plan | done | 5 phases, 28 steps, 4 features |
+| 4 | /execute-plan | done | 5 phases, 28 steps + email/password auth (replaced Sign in with Apple), BUILD SUCCEEDED, 76/76 tests pass |
+| 5 | /commit | >> next << | includes debug fixes |
+| 6 | /write-tests | not yet | |
+| 7 | /commit | not yet | conditional |
+| 8 | /debug | done | 4 bugs fixed: day-of-week headers, logged dot indicator, landscape image clipping, S3 image optimize (0.85q + resize + orientation) |
+| 9 | /security-check | not yet | loop |
+| 10 | /commit | not yet | conditional |
+| 11 | /review | not yet | loop |
+| 12 | /commit | not yet | conditional |
+| 13 | /finish-feature | not yet | |
 | 14 | /release | not yet | optional |

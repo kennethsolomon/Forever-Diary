@@ -4,7 +4,8 @@ import SwiftData
 @main
 struct ForeverDiaryApp: App {
     let container: ModelContainer
-    let authService: CognitoAuthService
+    let cognitoAuth: CognitoAuthService
+    let googleAuth: GoogleAuthService
     let syncService: SyncService
 
     init() {
@@ -50,21 +51,30 @@ struct ForeverDiaryApp: App {
         container = resolvedContainer
         TemplateSeedService.seedDefaultTemplatesIfNeeded(context: container.mainContext)
 
-        // Services are created in all modes (needed for @Environment in views).
-        // Init has no network side effects; startSync() guards against test mode.
         let auth = CognitoAuthService()
         let api = APIClient(authService: auth)
-        authService = auth
+        cognitoAuth = auth
+        googleAuth = GoogleAuthService()
         syncService = SyncService(apiClient: api, authService: auth, container: resolvedContainer)
     }
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environment(syncService)
-                .task {
-                    await startSync()
-                }
+            if cognitoAuth.isAuthenticated {
+                ContentView()
+                    .environment(syncService)
+                    .environment(cognitoAuth)
+                    .task { await startSync() }
+            } else {
+                SignInView()
+                    .environment(cognitoAuth)
+                    .environment(googleAuth)
+                    .onChange(of: cognitoAuth.isAuthenticated) { _, authenticated in
+                        if authenticated {
+                            Task { await startSync() }
+                        }
+                    }
+            }
         }
         .modelContainer(container)
     }
@@ -73,13 +83,7 @@ struct ForeverDiaryApp: App {
         let isTestHost = NSClassFromString("XCTestCase") != nil
         guard !isTestHost else { return }
 
-        do {
-            _ = try await authService.authenticate()
-            // Brief delay to let UI settle before background sync
-            try? await Task.sleep(for: .seconds(2))
-            await syncService.syncAll()
-        } catch {
-            print("[ForeverDiary] Auth/sync init failed: \(error.localizedDescription)")
-        }
+        try? await Task.sleep(for: .seconds(2))
+        await syncService.syncAll()
     }
 }

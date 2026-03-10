@@ -4,6 +4,7 @@ import SwiftData
 struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(SyncService.self) private var syncService
+    @Environment(CognitoAuthService.self) private var cognitoAuth
     @Query(sort: \CheckInTemplate.sortOrder) private var templates: [CheckInTemplate]
 
     @AppStorage("appTheme") private var appTheme: String = AppTheme.system.rawValue
@@ -11,22 +12,21 @@ struct SettingsView: View {
     @State private var templateToEdit: CheckInTemplate?
     @State private var templateToDelete: CheckInTemplate?
     @State private var showDeleteAlert = false
+    @State private var showSignOutAlert = false
+    @State private var editMode: EditMode = .inactive
 
     var body: some View {
         NavigationStack {
             List {
+                accountSection
                 appearanceSection
                 habitTemplatesSection
                 syncSection
                 aboutSection
             }
+            .environment(\.editMode, $editMode)
             .navigationTitle("Settings")
             .background(Color("backgroundPrimary"))
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    EditButton()
-                }
-            }
             .sheet(isPresented: $showAddTemplate) {
                 TemplateEditorSheet(template: nil) { label, type, isActive in
                     addTemplate(label: label, type: type, isActive: isActive)
@@ -54,6 +54,41 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Account
+
+    private var accountSection: some View {
+        Section {
+            HStack(spacing: 12) {
+                Image(systemName: "person.circle")
+                    .font(.system(.body))
+                    .foregroundStyle(Color("textPrimary"))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(cognitoAuth.userEmail ?? "Account")
+                        .font(.system(.body, design: .rounded))
+                        .foregroundStyle(Color("textPrimary"))
+                    Text("Signed in")
+                        .font(.system(.caption, design: .rounded))
+                        .foregroundStyle(Color("textSecondary"))
+                }
+            }
+
+            Button("Sign Out", role: .destructive) {
+                showSignOutAlert = true
+            }
+            .font(.system(.body, design: .rounded))
+        } header: {
+            Text("Account")
+        }
+        .alert("Sign Out?", isPresented: $showSignOutAlert) {
+            Button("Sign Out", role: .destructive) {
+                cognitoAuth.signOut()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You'll need to sign in again to access your diary.")
+        }
+    }
+
     // MARK: - Appearance
 
     private var appearanceSection: some View {
@@ -74,6 +109,7 @@ struct SettingsView: View {
     private var habitTemplatesSection: some View {
         Section {
             ForEach(templates) { template in
+
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(template.label)
@@ -111,7 +147,21 @@ struct SettingsView: View {
                     .foregroundStyle(Color("accentBright"))
             }
         } header: {
-            Text("Habit Templates")
+            HStack {
+                Text("Habit Templates")
+                Spacer()
+                Button {
+                    withAnimation {
+                        editMode = editMode == .active ? .inactive : .active
+                    }
+                } label: {
+                    Image(systemName: editMode == .active ? "checkmark.circle.fill" : "pencil.circle")
+                        .foregroundStyle(Color("accentBright"))
+                        .font(.system(size: 16))
+                        .contentTransition(.symbolEffect(.replace))
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 

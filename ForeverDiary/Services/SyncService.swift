@@ -30,6 +30,87 @@ final class SyncService {
         self.lastSyncDate = loadLastSyncDate()
     }
 
+    /// Soft-delete an entry: mark as tombstone so pushPending can sync the deletion.
+    /// Children are removed locally immediately; the entry itself is hard-deleted after the tombstone is pushed.
+    @MainActor
+    func deleteEntry(_ entry: DiaryEntry, context: ModelContext) async {
+        let monthDayKey = entry.monthDayKey
+        let year = entry.year
+        let photos = entry.safePhotoAssets
+        let checkIns = entry.safeCheckInValues
+
+        // Collect child DynamoDB SKs and S3 keys before removing them locally
+        var childDeleteItems: [[String: Any]] = checkIns.map { v in
+            ["sk": "checkin#\(monthDayKey)#\(year)#\(v.id.uuidString)", "operation": "delete"]
+        }
+        for photo in photos {
+            childDeleteItems.append(["sk": "photo#\(photo.id.uuidString)", "operation": "delete"])
+        }
+        let s3Keys: [String] = photos.flatMap { [$0.s3Key, $0.s3ThumbKey].compactMap { $0 } }
+
+        // Remove children locally so they are invisible immediately
+        for value in checkIns { context.delete(value) }
+        for photo in photos { context.delete(photo) }
+
+        // Soft-delete the entry — pushPending will send a tombstone then hard-delete it
+        entry.deletedAt = .now
+        entry.updatedAt = .now
+        entry.syncStatus = SyncStatus.pending
+        do {
+            try context.save()
+        } catch {
+            print("[SyncService] Soft-delete save failed: \(error.localizedDescription)")
+        }
+
+        // Best-effort: immediately delete child records from remote
+        guard !childDeleteItems.isEmpty else { return }
+        do {
+            try await authService.refreshIfNeeded()
+            let batchSize = 25
+            for (batchIndex, batchStart) in stride(from: 0, to: childDeleteItems.count, by: batchSize).enumerated() {
+                let batch = Array(childDeleteItems[batchStart..<min(batchStart + batchSize, childDeleteItems.count)])
+                var body: [String: Any] = ["items": batch]
+                if batchIndex == 0 && !s3Keys.isEmpty { body["deleteS3Keys"] = s3Keys }
+                _ = try await apiClient.post(path: "/sync", body: body)
+            }
+            print("[SyncService] Deleted \(checkIns.count) check-in(s) + \(photos.count) photo(s) from remote for \(monthDayKey)#\(year)")
+        } catch {
+            print("[SyncService] Remote child cleanup failed (tombstone will sync via pushPending): \(error.localizedDescription)")
+        }
+    }
+
+    /// Delete a single photo from DynamoDB and S3, then remove locally.
+    @MainActor
+    func deletePhoto(_ photo: PhotoAsset, context: ModelContext) async {
+        let photoId = photo.id.uuidString
+        let s3Key = photo.s3Key
+        let s3ThumbKey = photo.s3ThumbKey
+
+        // Delete locally first
+        context.delete(photo)
+        do {
+            try context.save()
+        } catch {
+            print("[SyncService] Local photo delete failed: \(error.localizedDescription)")
+        }
+
+        // Best-effort remote cleanup
+        do {
+            try await authService.refreshIfNeeded()
+            var body: [String: Any] = [
+                "items": [["sk": "photo#\(photoId)", "operation": "delete"]]
+            ]
+            var s3Keys: [String] = []
+            if let k = s3Key { s3Keys.append(k) }
+            if let k = s3ThumbKey { s3Keys.append(k) }
+            if !s3Keys.isEmpty { body["deleteS3Keys"] = s3Keys }
+            _ = try await apiClient.post(path: "/sync", body: body)
+            print("[SyncService] Deleted photo \(photoId) from remote")
+        } catch {
+            print("[SyncService] Remote photo delete failed (local already removed): \(error.localizedDescription)")
+        }
+    }
+
     /// Schedule a sync after a 5-second debounce delay.
     func scheduleDebouncedSync() {
         syncDebounceTask?.cancel()
@@ -75,37 +156,54 @@ final class SyncService {
         let pendingTemplates = try context.fetch(FetchDescriptor<CheckInTemplate>(predicate: templatePredicate))
 
         var items: [[String: Any]] = []
+        var tombstoneEntries: [DiaryEntry] = []
 
         for entry in pendingEntries {
-            let entryData: [String: Any] = [
-                "monthDayKey": entry.monthDayKey,
-                "year": entry.year,
-                "date": entry.date.timeIntervalSince1970,
-                "weekday": entry.weekday,
-                "diaryText": entry.diaryText,
-                "locationText": entry.locationText ?? "",
-                "createdAt": entry.createdAt.timeIntervalSince1970
-            ]
-            items.append([
-                "sk": "entry#\(entry.monthDayKey)#\(entry.year)",
-                "data": entryData,
-                "updatedAt": Self.isoFormatter.string(from: entry.updatedAt)
-            ])
-
-            for value in entry.safeCheckInValues {
-                var valueData: [String: Any] = [
-                    "id": value.id.uuidString,
-                    "templateId": value.templateId.uuidString
-                ]
-                if let b = value.boolValue { valueData["boolValue"] = b }
-                if let t = value.textValue { valueData["textValue"] = t }
-                if let n = value.numberValue { valueData["numberValue"] = n }
-
+            if let deletedAt = entry.deletedAt {
+                // Tombstone: push a marker so other devices know this entry was deleted
+                let deletedAtStr = Self.isoFormatter.string(from: deletedAt)
                 items.append([
-                    "sk": "checkin#\(entry.monthDayKey)#\(entry.year)#\(value.id.uuidString)",
-                    "data": valueData,
+                    "sk": "entry#\(entry.monthDayKey)#\(entry.year)",
+                    "data": [
+                        "monthDayKey": entry.monthDayKey,
+                        "year": entry.year,
+                        "weekday": entry.weekday,
+                        "deletedAt": deletedAtStr
+                    ],
+                    "updatedAt": deletedAtStr
+                ])
+                tombstoneEntries.append(entry)
+            } else {
+                let entryData: [String: Any] = [
+                    "monthDayKey": entry.monthDayKey,
+                    "year": entry.year,
+                    "date": entry.date.timeIntervalSince1970,
+                    "weekday": entry.weekday,
+                    "diaryText": entry.diaryText,
+                    "locationText": entry.locationText ?? "",
+                    "createdAt": entry.createdAt.timeIntervalSince1970
+                ]
+                items.append([
+                    "sk": "entry#\(entry.monthDayKey)#\(entry.year)",
+                    "data": entryData,
                     "updatedAt": Self.isoFormatter.string(from: entry.updatedAt)
                 ])
+
+                for value in entry.safeCheckInValues {
+                    var valueData: [String: Any] = [
+                        "id": value.id.uuidString,
+                        "templateId": value.templateId.uuidString
+                    ]
+                    if let b = value.boolValue { valueData["boolValue"] = b }
+                    if let t = value.textValue { valueData["textValue"] = t }
+                    if let n = value.numberValue { valueData["numberValue"] = n }
+
+                    items.append([
+                        "sk": "checkin#\(entry.monthDayKey)#\(entry.year)#\(value.id.uuidString)",
+                        "data": valueData,
+                        "updatedAt": Self.isoFormatter.string(from: entry.updatedAt)
+                    ])
+                }
             }
         }
 
@@ -134,11 +232,16 @@ final class SyncService {
 
         let now = Date()
         for entry in pendingEntries {
-            entry.syncStatus = SyncStatus.synced
-            entry.lastSyncedAt = now
-            for value in entry.safeCheckInValues {
-                value.syncStatus = SyncStatus.synced
-                value.lastSyncedAt = now
+            if entry.deletedAt != nil {
+                // Hard-delete tombstone after successful remote push
+                context.delete(entry)
+            } else {
+                entry.syncStatus = SyncStatus.synced
+                entry.lastSyncedAt = now
+                for value in entry.safeCheckInValues {
+                    value.syncStatus = SyncStatus.synced
+                    value.lastSyncedAt = now
+                }
             }
         }
         for template in pendingTemplates {
@@ -147,7 +250,7 @@ final class SyncService {
         }
 
         try context.save()
-        print("[SyncService] Pushed \(items.count) items")
+        print("[SyncService] Pushed \(items.count) items (\(tombstoneEntries.count) tombstone(s))")
     }
 
     /// Pull remote changes since last sync.
@@ -302,11 +405,21 @@ final class SyncService {
               let year = Int(parts.last ?? "") else { return }
 
         let remoteUpdatedAt = (item["updatedAt"] as? String).flatMap { Self.isoFormatter.date(from: $0) } ?? Date.distantPast
-
         let predicate = #Predicate<DiaryEntry> { $0.monthDayKey == monthDayKey && $0.year == year }
         let existing = try context.fetch(FetchDescriptor<DiaryEntry>(predicate: predicate))
 
+        // Handle tombstone: remote entry was deleted — apply if it's the latest write
+        if let deletedAtStr = item["deletedAt"] as? String,
+           let deletedAt = Self.isoFormatter.date(from: deletedAtStr) {
+            if let local = existing.first, deletedAt >= local.updatedAt {
+                context.delete(local) // cascade removes photos + check-ins
+            }
+            return
+        }
+
         if let local = existing.first {
+            // Skip if local is a pending tombstone (user deleted locally but not yet pushed)
+            if local.deletedAt != nil { return }
             if remoteUpdatedAt > local.updatedAt {
                 local.diaryText = item["diaryText"] as? String ?? local.diaryText
                 local.locationText = item["locationText"] as? String

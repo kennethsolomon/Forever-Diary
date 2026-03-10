@@ -5,9 +5,18 @@ final class CognitoAuthService {
     private(set) var identityId: String?
     private(set) var credentials: AWSCredentials?
     private(set) var isAuthenticated = false
+    private(set) var userEmail: String?
 
-    private let keychainKey = "cognitoIdentityId"
-    private let endpoint = "https://cognito-identity.\(AWSConfig.region).amazonaws.com"
+    private let keychainIdentityKey = "cognitoIdentityId"
+    private let keychainEmailKey = "cognitoUserEmail"
+    private let keychainIdTokenKey = "cognitoIdToken"
+    private let keychainRefreshKey = "cognitoRefreshToken"
+
+    private let identityEndpoint = "https://cognito-identity.\(AWSConfig.region).amazonaws.com"
+    private let userPoolEndpoint = "https://cognito-idp.\(AWSConfig.region).amazonaws.com/"
+
+    private var idToken: String?
+    private var refreshToken: String?
 
     struct AWSCredentials {
         let accessKeyId: String
@@ -17,54 +26,174 @@ final class CognitoAuthService {
     }
 
     init() {
-        // Restore identity from Keychain
-        identityId = KeychainHelper.load(key: keychainKey)
+        identityId = KeychainHelper.load(key: keychainIdentityKey)
+        userEmail = KeychainHelper.load(key: keychainEmailKey)
+        idToken = KeychainHelper.load(key: keychainIdTokenKey)
+        refreshToken = KeychainHelper.load(key: keychainRefreshKey)
+        if identityId != nil, userEmail != nil {
+            isAuthenticated = true
+        }
     }
 
-    /// Authenticate anonymously via Cognito. Returns the identity ID.
-    func authenticate() async throws -> String {
-        let id = try await getOrCreateIdentity()
-        let creds = try await getCredentials(identityId: id)
+    // MARK: - User Pool Auth
+
+    /// Register a new account. The user must confirm their email before signing in.
+    func signUp(email: String, password: String) async throws {
+        let body: [String: Any] = [
+            "ClientId": AWSConfig.cognitoUserPoolClientId,
+            "Username": email,
+            "Password": password
+        ]
+        _ = try await userPoolRequest(target: "AWSCognitoIdentityProviderService.SignUp", body: body)
+    }
+
+    /// Confirm registration with the 6-digit code sent to the user's email.
+    func confirmSignUp(email: String, code: String) async throws {
+        let body: [String: Any] = [
+            "ClientId": AWSConfig.cognitoUserPoolClientId,
+            "Username": email,
+            "ConfirmationCode": code
+        ]
+        _ = try await userPoolRequest(target: "AWSCognitoIdentityProviderService.ConfirmSignUp", body: body)
+    }
+
+    /// Sign in with email and password. Obtains Cognito credentials on success.
+    func signIn(email: String, password: String) async throws {
+        identityId = nil
+        let body: [String: Any] = [
+            "AuthFlow": "USER_PASSWORD_AUTH",
+            "AuthParameters": [
+                "USERNAME": email,
+                "PASSWORD": password
+            ],
+            "ClientId": AWSConfig.cognitoUserPoolClientId
+        ]
+        let data = try await userPoolRequest(
+            target: "AWSCognitoIdentityProviderService.InitiateAuth",
+            body: body
+        )
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let authResult = json["AuthenticationResult"] as? [String: Any],
+              let newIdToken = authResult["IdToken"] as? String,
+              let newRefreshToken = authResult["RefreshToken"] as? String else {
+            throw CognitoError.invalidResponse
+        }
+
+        idToken = newIdToken
+        refreshToken = newRefreshToken
+
+        let logins = userPoolLogins(idToken: newIdToken)
+        let id = try await getOrCreateIdentity(logins: logins)
+        let creds = try await getCredentials(identityId: id, logins: logins)
 
         identityId = id
         credentials = creds
+        userEmail = email
         isAuthenticated = true
 
-        // Persist identity in Keychain (survives reinstall)
-        KeychainHelper.save(key: keychainKey, value: id)
-
-        return id
+        KeychainHelper.save(key: keychainIdentityKey, value: id)
+        KeychainHelper.save(key: keychainEmailKey, value: email)
+        KeychainHelper.save(key: keychainIdTokenKey, value: newIdToken)
+        KeychainHelper.save(key: keychainRefreshKey, value: newRefreshToken)
     }
 
-    /// Refresh credentials if expired or about to expire (within 5 min).
-    func refreshIfNeeded() async throws {
-        guard let id = identityId else {
-            _ = try await authenticate()
-            return
-        }
-
-        if let creds = credentials, creds.expiration.timeIntervalSinceNow > 300 {
-            return // Still valid for >5 min
-        }
-
-        let creds = try await getCredentials(identityId: id)
-        credentials = creds
-    }
-
-    // MARK: - Cognito REST API
-
-    private func getOrCreateIdentity() async throws -> String {
-        // If we have a stored identity, return it. Credentials are fetched separately.
-        if let stored = identityId {
-            return stored
-        }
-
-        // Call Cognito GetId
+    /// Send a password-reset code to the given email.
+    func forgotPassword(email: String) async throws {
         let body: [String: Any] = [
-            "IdentityPoolId": AWSConfig.cognitoIdentityPoolId
+            "ClientId": AWSConfig.cognitoUserPoolClientId,
+            "Username": email
         ]
+        _ = try await userPoolRequest(target: "AWSCognitoIdentityProviderService.ForgotPassword", body: body)
+    }
 
-        let data = try await cognitoRequest(target: "AWSCognitoIdentityService.GetId", body: body)
+    /// Confirm password reset with the code and a new password.
+    func confirmNewPassword(email: String, code: String, newPassword: String) async throws {
+        let body: [String: Any] = [
+            "ClientId": AWSConfig.cognitoUserPoolClientId,
+            "Username": email,
+            "ConfirmationCode": code,
+            "Password": newPassword
+        ]
+        _ = try await userPoolRequest(
+            target: "AWSCognitoIdentityProviderService.ConfirmForgotPassword",
+            body: body
+        )
+    }
+
+    /// Sign in with a Google ID token. Federates via Cognito Identity Pool.
+    func signInWithGoogle(idToken: String, email: String?) async throws {
+        identityId = nil
+        let logins = ["accounts.google.com": idToken]
+        let id = try await getOrCreateIdentity(logins: logins)
+        let creds = try await getCredentials(identityId: id, logins: logins)
+
+        identityId = id
+        credentials = creds
+        userEmail = email
+        isAuthenticated = true
+
+        KeychainHelper.save(key: keychainIdentityKey, value: id)
+        if let email { KeychainHelper.save(key: keychainEmailKey, value: email) }
+    }
+
+    /// Sign out: clear all credentials and Keychain state.
+    func signOut() {
+        identityId = nil
+        credentials = nil
+        idToken = nil
+        refreshToken = nil
+        userEmail = nil
+        isAuthenticated = false
+        KeychainHelper.delete(key: keychainIdentityKey)
+        KeychainHelper.delete(key: keychainEmailKey)
+        KeychainHelper.delete(key: keychainIdTokenKey)
+        KeychainHelper.delete(key: keychainRefreshKey)
+    }
+
+    /// Refresh AWS credentials if expired or about to expire (within 5 min).
+    func refreshIfNeeded() async throws {
+        guard let id = identityId else { return }
+        if let creds = credentials, creds.expiration.timeIntervalSinceNow > 300 { return }
+
+        if let rt = refreshToken {
+            let body: [String: Any] = [
+                "AuthFlow": "REFRESH_TOKEN_AUTH",
+                "AuthParameters": ["REFRESH_TOKEN": rt],
+                "ClientId": AWSConfig.cognitoUserPoolClientId
+            ]
+            if let data = try? await userPoolRequest(
+                target: "AWSCognitoIdentityProviderService.InitiateAuth",
+                body: body
+            ),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let authResult = json["AuthenticationResult"] as? [String: Any],
+               let newIdToken = authResult["IdToken"] as? String {
+                idToken = newIdToken
+                KeychainHelper.save(key: keychainIdTokenKey, value: newIdToken)
+                let logins = userPoolLogins(idToken: newIdToken)
+                credentials = try await getCredentials(identityId: id, logins: logins)
+                return
+            }
+        }
+
+        if let token = idToken {
+            let logins = userPoolLogins(idToken: token)
+            credentials = try await getCredentials(identityId: id, logins: logins)
+        }
+    }
+
+    // MARK: - Cognito Identity REST API
+
+    private func userPoolLogins(idToken: String) -> [String: String] {
+        ["cognito-idp.\(AWSConfig.region).amazonaws.com/\(AWSConfig.cognitoUserPoolId)": idToken]
+    }
+
+    private func getOrCreateIdentity(logins: [String: String]) async throws -> String {
+        let body: [String: Any] = [
+            "IdentityPoolId": AWSConfig.cognitoIdentityPoolId,
+            "Logins": logins
+        ]
+        let data = try await cognitoIdentityRequest(target: "AWSCognitoIdentityService.GetId", body: body)
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let id = json["IdentityId"] as? String else {
             throw CognitoError.invalidResponse
@@ -72,12 +201,15 @@ final class CognitoAuthService {
         return id
     }
 
-    private func getCredentials(identityId: String) async throws -> AWSCredentials {
+    private func getCredentials(identityId: String, logins: [String: String]) async throws -> AWSCredentials {
         let body: [String: Any] = [
-            "IdentityId": identityId
+            "IdentityId": identityId,
+            "Logins": logins
         ]
-
-        let data = try await cognitoRequest(target: "AWSCognitoIdentityService.GetCredentialsForIdentity", body: body)
+        let data = try await cognitoIdentityRequest(
+            target: "AWSCognitoIdentityService.GetCredentialsForIdentity",
+            body: body
+        )
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let creds = json["Credentials"] as? [String: Any],
               let accessKeyId = creds["AccessKeyId"] as? String,
@@ -86,7 +218,6 @@ final class CognitoAuthService {
               let expiration = creds["Expiration"] as? Double else {
             throw CognitoError.invalidResponse
         }
-
         return AWSCredentials(
             accessKeyId: accessKeyId,
             secretKey: secretKey,
@@ -95,11 +226,8 @@ final class CognitoAuthService {
         )
     }
 
-    private func cognitoRequest(target: String, body: [String: Any]) async throws -> Data {
-        guard let url = URL(string: endpoint) else {
-            throw CognitoError.invalidURL
-        }
-
+    private func userPoolRequest(target: String, body: [String: Any]) async throws -> Data {
+        guard let url = URL(string: userPoolEndpoint) else { throw CognitoError.invalidURL }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/x-amz-json-1.1", forHTTPHeaderField: "Content-Type")
@@ -108,16 +236,49 @@ final class CognitoAuthService {
         request.timeoutInterval = 15
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
+        if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let message = json["message"] as? String {
+                throw CognitoError.serverError(message)
+            }
             throw CognitoError.requestFailed
         }
         return data
     }
 
-    enum CognitoError: Error {
+    private func cognitoIdentityRequest(target: String, body: [String: Any]) async throws -> Data {
+        guard let url = URL(string: identityEndpoint) else { throw CognitoError.invalidURL }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/x-amz-json-1.1", forHTTPHeaderField: "Content-Type")
+        request.setValue(target, forHTTPHeaderField: "X-Amz-Target")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.timeoutInterval = 15
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let message = json["message"] as? String {
+                throw CognitoError.serverError(message)
+            }
+            throw CognitoError.requestFailed
+        }
+        return data
+    }
+
+    enum CognitoError: Error, LocalizedError {
         case invalidURL
         case invalidResponse
         case requestFailed
+        case serverError(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .serverError(let msg): return msg
+            case .requestFailed: return "Request failed. Please check your connection."
+            case .invalidResponse: return "Unexpected response from server."
+            case .invalidURL: return "Invalid server URL."
+            }
+        }
     }
 }

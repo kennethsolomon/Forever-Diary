@@ -154,3 +154,45 @@
 | Command | Expected | Actual | Status |
 |---------|----------|--------|--------|
 | xcodebuild test (iPhone 17 Pro Sim) | 89/89 tests pass | 89/89 tests pass | PASS |
+
+## Session: 2026-03-10 (UI Polish + Sign in with Apple)
+
+## Work Log
+- 2026-03-10 — Phase 1: Removed isViewMode toggle, toolbar button, MarkdownTextView branches from HomeView and EntryDetailView
+- 2026-03-10 — Phase 1: Deleted MarkdownTextView.swift and MarkdownTests.swift; xcodegen regenerate; BUILD SUCCEEDED
+- 2026-03-10 — Phase 2: Rewrote DayCell in CalendarBrowserView — portrait 3:4 cards, RoundedRectangle replaces Circle, stacked deck ZStack for multi-entry days, count badge; grid spacing 4→3; BUILD SUCCEEDED
+- 2026-03-10 — Phase 3: Created PhotoGalleryView.swift — TabView .page, pinch-to-zoom, swipe-down dismiss, X button, counter, pagination dots
+- 2026-03-10 — Phase 3: Updated EntryDetailView to use PhotoGalleryView (index-based), removed PhotoFullScreenView; added sortedPhotos computed property
+- 2026-03-10 — Phase 3: Updated YearSummaryCard thumbnails 40→64px, tappable into gallery; BUILD SUCCEEDED
+- 2026-03-10 — Phase 4: Added com.apple.developer.applesignin entitlement
+- 2026-03-10 — Phase 4: Created AppleAuthService.swift (ASAuthorizationAppleIDProvider, CheckedContinuation)
+- 2026-03-10 — Phase 4: Updated CognitoAuthService — added authenticateWithApple, signOut, displayName, identity linking support, Apple auth state restoration
+- 2026-03-10 — Phase 4: Created SignInView.swift — dark bg, dot-ring motif, serif app name, SignInWithAppleButton, staggered appear animation
+- 2026-03-10 — Phase 4: Updated ForeverDiaryApp — auth gate (SignInView vs ContentView), cognitoAuth/appleAuth passed as environments
+- 2026-03-10 — Phase 4: Updated SettingsView — Account section, Sign Out, removed EditButton, pencil.circle inline in Habit Templates header
+- 2026-03-10 — Phase 4+5: xcodegen regenerate; BUILD SUCCEEDED; 76/76 tests pass
+
+## Files Created
+- ForeverDiary/Views/Components/PhotoGalleryView.swift
+- ForeverDiary/Views/Auth/SignInView.swift
+- ForeverDiary/Services/AppleAuthService.swift
+
+## Files Modified
+- ForeverDiary/Views/Home/HomeView.swift
+- ForeverDiary/Views/Entry/EntryDetailView.swift
+- ForeverDiary/Views/Calendar/CalendarBrowserView.swift
+- ForeverDiary/Views/Calendar/TimelineView.swift
+- ForeverDiary/Services/CognitoAuthService.swift
+- ForeverDiary/App/ForeverDiaryApp.swift
+- ForeverDiary/Views/Settings/SettingsView.swift
+- ForeverDiary/ForeverDiary.entitlements
+
+## Files Deleted
+- ForeverDiary/Views/Components/MarkdownTextView.swift
+- ForeverDiaryTests/MarkdownTests.swift
+
+## Test Results
+| Command | Expected | Actual | Status |
+|---------|----------|--------|--------|
+| xcodebuild build (iPhone 17 Pro Sim) | BUILD SUCCEEDED | BUILD SUCCEEDED | PASS |
+| xcodebuild test (iPhone 17 Pro Sim) | 76/76 tests pass | 76/76 tests pass | PASS |

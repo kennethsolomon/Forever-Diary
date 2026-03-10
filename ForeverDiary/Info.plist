@@ -8,5 +8,14 @@
 	<string>Forever Diary lets you attach photos to your diary entries.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Forever Diary lets you take photos to attach to your diary entries.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.189908989468-l54fh8m4tmv5shibmo2om1mi8ta917hb</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

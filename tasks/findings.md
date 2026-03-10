@@ -1,85 +1,111 @@
-# Forever Diary — Calendar UI + Theme + View Mode Redesign
+# Forever Diary — UI Polish + Sign in with Apple
 
 ## Problem Statement
-The calendar tab is a flat vertical list of day numbers with dots — no visual richness, no photos, no real calendar layout. The app also lacks a proper theme system and a view/write mode toggle for diary entries.
+Four improvements to the iOS app:
+1. Remove the view/write mode toggle (eye icon) from Home and EntryDetail — it's unwanted
+2. Photo viewer is broken (not centered, image cut off) — needs a full paginated gallery
+3. Calendar day cells (circles) don't match the aesthetic — needs photo cards with stacked deck effect
+4. No real accounts — users can't sign in, data is device-bound (anonymous Cognito)
 
-## Scope — Three Features
+## Scope — Four Features
 
-### Feature A: Calendar Grid Redesign
-**Goal:** Replace the flat day list with a photo-rich calendar grid.
+### Feature A: Remove View/Write Mode Toggle
+**Goal:** Delete the eye icon and all related code.
 
-- **Layout:** 7-column calendar grid with proper weekday alignment (day 1 on correct column)
-- **Month header:** Month name centered at top, no day-of-week column labels
-- **Month navigation:** Vertical scroll through all 12 months (replace paged TabView)
-- **Day cells:**
-  - No photos: plain day number
-  - 1 photo: full circular thumbnail with day number overlaid in white + drop shadow
-  - 2–3 photos: circle divided into halves/thirds showing different thumbnails
-  - 4+ photos: quad-divided circle with count badge
-  - Photos aggregate across all years for that monthDayKey
-- **Today indicator:** Highlighted number (accent color or accent ring)
-- **Tap interaction:** Inline popover/sheet with compact summary:
-  - Photo grid + text previews per year entry
-  - Tap an entry in the popover to navigate to full EntryDetailView
-  - Replaces the current push-to-DayTimelineView navigation for initial tap
+- Remove `isViewMode` state from `HomeView` and `EntryDetailView`
+- Remove toolbar `Button` (eye / square.and.pencil icon) from both views
+- Remove `MarkdownTextView` render branches from both `textEditor` and `diarySection`
+- Delete `MarkdownTextView.swift` (zero usages after removal)
+- Remove `MarkdownTests.swift` (only tests the deleted component)
+- Remove `isTextEditorFocused` toggle-on-mode-switch side effects in `HomeView`
 
-### Feature B: Theme System
-**Goal:** Clean, readable theme with dark/light toggle.
+### Feature B: Full Paginated Photo Gallery Viewer
+**Goal:** Replace the broken fullscreen single-photo view with a proper swipe-through gallery.
 
-- **Dark mode palette:**
-  - Background primary: #222831
-  - Surface/card: #393E46
-  - Accent: #00ADB5 (teal)
-  - Text primary: #EEEEEE
-- **Light mode palette:**
-  - Background primary: white
-  - Surface/card: light gray or white with subtle shadow
-  - Accent: #00ADB5 (same teal)
-  - Text primary: dark/black
-- **Toggle:** Settings page — button/toggle to switch dark/light
-- **Implementation:** Update existing color assets or replace with a theme system that respects the toggle
-- Clean, minimal, highly readable
+- Root cause: `ZStack(alignment: .topTrailing)` + `.ignoresSafeArea()` on image
+- New `PhotoGalleryView`: full-screen, black bg, swipe left/right through all entry photos
+- Entry point: tap any photo thumbnail → opens gallery at that photo's index
+- `X of N` counter at top (or pagination dots at bottom)
+- Pinch-to-zoom on current photo
+- Swipe down to dismiss (with velocity threshold)
+- Applies to: `EntryDetailView` (primary), and `YearSummaryCard` thumbnails (also tappable)
+- Improve `YearSummaryCard` photo thumbnails: larger tiles (64×64), not the current 40×40 strip
 
-### Feature C: View/Write Mode Toggle
-**Goal:** Apple Notes-style read/write behavior on Home and EntryDetailView.
+### Feature C: Calendar Day Cards + Stacked Display
+**Goal:** Replace circular day cells with portrait-ratio photo cards; multi-entry/photo days show a stacked deck.
 
-- **Button:** Upper-right corner, toggles between view and write mode
-- **Write mode (default):** Current behavior — TextEditor, keyboard, editable
-- **View mode:** Diary text rendered as **markdown** (supports future markdown export)
-  - No cursor, no keyboard
-  - Tap anywhere on the text area → switches back to write mode automatically
-- **Applies to:** HomeView and EntryDetailView
+- **Shape:** `RoundedRectangle` card, portrait aspect ratio ~3:4
+- **Single entry / no photo:** Plain card with day number, teal accent ring for today
+- **Single photo:** Card with photo background, day number overlaid in white
+- **2+ entries or photos:** Stacked deck using `ZStack`
+  - 2–3 background cards slightly offset (y +4–8px) and rotated (±2–4°)
+  - Top card shows the most recent/primary photo
+  - Small count badge (number of entries or total photos)
+- Remove all `Circle()` / `clipShape(Circle())` from `DayCell`
+- Keep `ScaleButtonStyle` press animation
+
+### Feature D: Sign in with Apple + Account System
+**Goal:** Replace anonymous Cognito with Apple-authenticated identity. Account required — no guest mode.
+
+**Auth flow:**
+1. App launch → check Keychain for authenticated session → if not found, show `SignInView`
+2. `SignInView`: centered "Sign in with Apple" button (ASAuthorizationAppleIDProvider)
+3. Apple returns `identityToken` (JWT) → pass to Cognito Identity Pool as Apple Login provider
+4. Cognito returns stable authenticated `identityId` (linked to Apple account, stable across devices)
+5. Store `identityId` + display name in Keychain
+6. App unlocks — proceed to main `ContentView`
+
+**Migration (anonymous → authenticated):**
+- Cognito Identity Linking: pass the stored anonymous `identityId` alongside the Apple token in `GetId`
+- Cognito merges anonymous → authenticated identity, returns the same IdentityId
+- All DynamoDB data (keyed by old IdentityId) remains intact — zero data movement needed
+- One-time migration on first sign-in; subsequent sign-ins skip this
+
+**New files:**
+- `ForeverDiary/Views/Auth/SignInView.swift` — Sign in with Apple screen
+- `ForeverDiary/Services/AppleAuthService.swift` — ASAuthorizationAppleIDProvider wrapper
+
+**Modified files:**
+- `ForeverDiary/Services/CognitoAuthService.swift` — add `authenticateWithApple(identityToken:)`, identity linking
+- `ForeverDiary/App/ForeverDiaryApp.swift` — auth gate: `SignInView` if not authenticated, else `ContentView`
+- `ForeverDiary/Views/Settings/SettingsView.swift` — Account section: show Apple display name, Sign Out button
 
 ## Key Decisions
 
-1. **Vertical scroll for months** instead of paged TabView — eliminates gesture conflicts, more natural browsing
-2. **Collage circle** for multi-photo days — matches user's reference screenshot
-3. **Inline popover** instead of push navigation — reduces tap depth (2 taps to entry instead of 3)
-4. **Markdown rendering** in view mode — prepares for future markdown export feature
-5. **Theme toggle in Settings** — simple, not cluttering other views
-6. **Thumbnails are 300x300 JPEG** (`PhotoAsset.thumbnailData`) — sufficient for small circular grid cells
+1. **View mode removed entirely** — simplifies both views, no markdown render path
+2. **Full paginated gallery** — swipe between photos, pinch-to-zoom, swipe-down dismiss
+3. **Stacked card deck** — portrait cards, ZStack offset + slight rotation for multi-entry days
+4. **Cognito Identity Linking** — anonymous IdentityId upgraded to authenticated in-place; no Lambda migration needed
+5. **Account required** — no guest mode; Sign in with Apple mandatory on first launch
+6. **Apple identity token → Cognito** — use `appleid.apple.com` as the Cognito Identity Pool login provider key
 
-## Files Likely Affected
+## Files Affected
 
-### Calendar (Feature A)
-- `ForeverDiary/Views/Calendar/CalendarBrowserView.swift` — full rewrite (grid, vertical scroll, collage cells)
-- `ForeverDiary/Views/Calendar/TimelineView.swift` — may be repurposed or replaced by popover content
-- Possibly new: popover/sheet view for day summary
+### Feature A (View Mode Removal)
+- `ForeverDiary/Views/Home/HomeView.swift`
+- `ForeverDiary/Views/Entry/EntryDetailView.swift`
+- `ForeverDiary/Views/Components/MarkdownTextView.swift` — delete
+- `ForeverDiaryTests/MarkdownTests.swift` — delete
 
-### Theme (Feature B)
-- `Assets.xcassets/` — update color sets (backgroundPrimary, surfaceCard, textPrimary, textSecondary, accentBright, accentSlate)
-- `ForeverDiary/Views/Settings/SettingsView.swift` — add theme toggle
-- Possibly new: theme manager/service or AppStorage-based preference
+### Feature B (Photo Gallery)
+- `ForeverDiary/Views/Entry/EntryDetailView.swift` — replace `fullScreenCover` with gallery
+- `ForeverDiary/Views/Calendar/TimelineView.swift` — improve `YearSummaryCard` photo thumbnails
+- New: `ForeverDiary/Views/Components/PhotoGalleryView.swift`
 
-### View/Write Mode (Feature C)
-- `ForeverDiary/Views/Home/HomeView.swift` — add toggle button, view mode with markdown rendering
-- `ForeverDiary/Views/Entry/EntryDetailView.swift` — same toggle + markdown rendering
-- Markdown rendering: use `AttributedString` with markdown init (built into iOS 15+) or a lightweight approach
+### Feature C (Calendar Cards)
+- `ForeverDiary/Views/Calendar/CalendarBrowserView.swift` — rewrite `DayCell`
+
+### Feature D (Auth)
+- `ForeverDiary/App/ForeverDiaryApp.swift`
+- `ForeverDiary/Services/CognitoAuthService.swift`
+- `ForeverDiary/Views/Settings/SettingsView.swift`
+- New: `ForeverDiary/Views/Auth/SignInView.swift`
+- New: `ForeverDiary/Services/AppleAuthService.swift`
 
 ## Design Constraints (from lessons.md)
 - No `@Attribute(.unique)` in SwiftData models
 - Test containers must use `ModelContext(container)` not `container.mainContext`
-- Test host guard for CloudKit in ForeverDiaryApp
+- Test host guard for CloudKit in ForeverDiaryApp (extend to skip auth services too)
 
 ## Open Questions
 - None — direction is locked in.

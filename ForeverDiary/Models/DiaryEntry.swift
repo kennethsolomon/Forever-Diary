@@ -13,6 +13,7 @@ final class DiaryEntry {
     var updatedAt: Date = Date.now
     var syncStatus: String = "pending"
     var lastSyncedAt: Date?
+    var deletedAt: Date? = nil
 
     @Relationship(deleteRule: .cascade, inverse: \CheckInValue.entry)
     var checkInValues: [CheckInValue]? = []

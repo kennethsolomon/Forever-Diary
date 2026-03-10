@@ -1,5 +1,5 @@
 import { DynamoDBClient, BatchWriteItemCommand, QueryCommand } from "@aws-sdk/client-dynamodb";
-import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectsCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 
@@ -43,9 +43,9 @@ export const handler = async (event) => {
   }
 };
 
-// POST /sync — batch upsert items to DynamoDB
+// POST /sync — batch upsert or delete items in DynamoDB; optionally delete S3 objects
 async function handleSyncPush(userId, body) {
-  const { items } = body;
+  const { items, deleteS3Keys } = body;
   if (!items || !Array.isArray(items) || items.length === 0) {
     return respond(400, { error: "items array required" });
   }
@@ -63,6 +63,13 @@ async function handleSyncPush(userId, body) {
   let written = 0;
   for (const batch of batches) {
     const requests = batch.map((item) => {
+      if (item.operation === "delete") {
+        return {
+          DeleteRequest: {
+            Key: marshall({ userId, sk: item.sk }),
+          },
+        };
+      }
       // Strip reserved keys from item.data to prevent partition key overwrite
       const { userId: _, sk: __, ...safeData } = item.data || {};
       return {
@@ -99,6 +106,23 @@ async function handleSyncPush(userId, body) {
     }
 
     written += batch.length - unprocessed.length;
+  }
+
+  // Delete S3 objects if requested
+  if (Array.isArray(deleteS3Keys) && deleteS3Keys.length > 0) {
+    // Scope keys to this user's prefix and batch into groups of 1000 (S3 limit)
+    const s3Objects = deleteS3Keys.map((key) => ({
+      Key: key.startsWith(`${userId}/`) ? key : `${userId}/${key}`,
+    }));
+    for (let i = 0; i < s3Objects.length; i += 1000) {
+      const batch = s3Objects.slice(i, i + 1000);
+      await s3.send(
+        new DeleteObjectsCommand({
+          Bucket: BUCKET,
+          Delete: { Objects: batch, Quiet: true },
+        })
+      );
+    }
   }
 
   return respond(200, { written });

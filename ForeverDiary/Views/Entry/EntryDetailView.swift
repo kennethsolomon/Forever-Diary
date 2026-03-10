@@ -19,12 +19,10 @@ struct EntryDetailView: View {
     @State private var photoToDelete: PhotoAsset?
     @State private var showDeletePhotoAlert = false
     @State private var showPhotoLimitAlert = false
-    @State private var fullScreenPhoto: PhotoAsset?
+    @State private var galleryStartIndex: Int?
     @State private var saveTask: Task<Void, Never>?
     @State private var locationSaveTask: Task<Void, Never>?
     @State private var showSaved = false
-    @State private var isViewMode = false
-    @FocusState private var isDiaryFocused: Bool
 
     @Query private var templates: [CheckInTemplate]
 
@@ -62,29 +60,20 @@ struct EntryDetailView: View {
         .background(Color("backgroundPrimary"))
         .navigationTitle(formattedDate)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        isViewMode.toggle()
-                        if !isViewMode {
-                            isDiaryFocused = true
-                        }
-                    }
-                } label: {
-                    Image(systemName: isViewMode ? "square.and.pencil" : "eye")
-                        .foregroundStyle(Color("accentBright"))
-                }
-            }
-        }
-        .fullScreenCover(item: $fullScreenPhoto) { photo in
-            PhotoFullScreenView(photo: photo)
+        .fullScreenCover(isPresented: Binding(
+            get: { galleryStartIndex != nil },
+            set: { if !$0 { galleryStartIndex = nil } }
+        )) {
+            PhotoGalleryView(photos: sortedPhotos, startIndex: galleryStartIndex ?? 0)
         }
         .alert("Delete Photo?", isPresented: $showDeletePhotoAlert) {
             Button("Delete", role: .destructive) {
                 if let photoToDelete {
-                    modelContext.delete(photoToDelete)
-                    try? modelContext.save()
+                    let context = modelContext
+                    let photo = photoToDelete
+                    Task {
+                        await syncService.deletePhoto(photo, context: context)
+                    }
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -94,6 +83,10 @@ struct EntryDetailView: View {
         } message: {
             Text("Maximum \(PhotoAsset.maxPhotosPerEntry) photos per entry.")
         }
+    }
+
+    private var sortedPhotos: [PhotoAsset] {
+        entry?.safePhotoAssets.sorted(by: { $0.createdAt < $1.createdAt }) ?? []
     }
 
     private var formattedDate: String {
@@ -143,40 +136,24 @@ struct EntryDetailView: View {
     // MARK: - Diary Text
 
     private var diarySection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if isViewMode {
-                MarkdownTextView(text: diaryText)
-                    .frame(minHeight: 200, alignment: .topLeading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            isViewMode = false
-                            isDiaryFocused = true
-                        }
-                    }
-            } else {
-                ZStack(alignment: .topLeading) {
-                    if diaryText.isEmpty {
-                        Text("Write about your day...")
-                            .font(.system(.body, design: .serif))
-                            .foregroundStyle(Color("textSecondary").opacity(0.6))
-                            .padding(.top, 8)
-                            .padding(.leading, 5)
-                            .allowsHitTesting(false)
-                    }
-
-                    TextEditor(text: $diaryText)
-                        .font(.system(.body, design: .serif))
-                        .foregroundStyle(Color("textPrimary"))
-                        .scrollContentBackground(.hidden)
-                        .frame(minHeight: 200)
-                        .focused($isDiaryFocused)
-                        .onChange(of: diaryText) { _, newValue in
-                            debounceSave(text: newValue)
-                        }
-                }
+        ZStack(alignment: .topLeading) {
+            if diaryText.isEmpty {
+                Text("Write about your day...")
+                    .font(.system(.body, design: .serif))
+                    .foregroundStyle(Color("textSecondary").opacity(0.6))
+                    .padding(.top, 8)
+                    .padding(.leading, 5)
+                    .allowsHitTesting(false)
             }
+
+            TextEditor(text: $diaryText)
+                .font(.system(.body, design: .serif))
+                .foregroundStyle(Color("textPrimary"))
+                .scrollContentBackground(.hidden)
+                .frame(minHeight: 200)
+                .onChange(of: diaryText) { _, newValue in
+                    debounceSave(text: newValue)
+                }
         }
     }
 
@@ -295,16 +272,16 @@ struct EntryDetailView: View {
                 }
             }
 
-            if let entry, !entry.safePhotoAssets.isEmpty {
+            if !sortedPhotos.isEmpty {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-                    ForEach(entry.safePhotoAssets.sorted(by: { $0.createdAt < $1.createdAt })) { photo in
+                    ForEach(Array(sortedPhotos.enumerated()), id: \.element.id) { index, photo in
                         if let uiImage = UIImage(data: photo.thumbnailData) {
                             Image(uiImage: uiImage)
                                 .resizable()
                                 .aspectRatio(1, contentMode: .fill)
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                                 .onTapGesture {
-                                    fullScreenPhoto = photo
+                                    galleryStartIndex = index
                                 }
                                 .contextMenu {
                                     Button(role: .destructive) {
@@ -327,7 +304,7 @@ struct EntryDetailView: View {
         let key = monthDayKey
         let yr = year
         let descriptor = FetchDescriptor<DiaryEntry>(
-            predicate: #Predicate { $0.monthDayKey == key && $0.year == yr }
+            predicate: #Predicate { $0.monthDayKey == key && $0.year == yr && $0.deletedAt == nil }
         )
         entry = try? modelContext.fetch(descriptor).first
         diaryText = entry?.diaryText ?? ""
@@ -427,6 +404,8 @@ struct EntryDetailView: View {
         syncService.scheduleDebouncedSync()
     }
 
+    // MARK: - Image Helpers
+
     private func addPhotos(from items: [PhotosPickerItem]) async {
         let e = ensureEntry()
         for item in items {
@@ -437,12 +416,14 @@ struct EntryDetailView: View {
             guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
             guard let uiImage = UIImage(data: data) else { continue }
 
-            let compressed = uiImage.jpegData(compressionQuality: 0.7) ?? data
+            let normalized = uiImage.normalizedOrientation()
+            let resized = normalized.resizedIfNeeded(maxDimension: 4096)
+            let compressed = resized.jpegData(compressionQuality: 0.85) ?? data
             guard compressed.count <= PhotoAsset.maxPhotoBytes else { continue }
 
             let thumbnailSize = CGSize(width: 300, height: 300)
-            let thumbnail = uiImage.preparingThumbnail(of: thumbnailSize)
-            let thumbData = thumbnail?.jpegData(compressionQuality: 0.7) ?? compressed
+            let thumbnail = resized.preparingThumbnail(of: thumbnailSize)
+            let thumbData = thumbnail?.jpegData(compressionQuality: 0.8) ?? compressed
 
             let asset = PhotoAsset(imageData: compressed, thumbnailData: thumbData)
             asset.entry = e
@@ -457,31 +438,24 @@ struct EntryDetailView: View {
     }
 }
 
-// MARK: - Photo Full Screen
+// MARK: - UIImage helpers
 
-struct PhotoFullScreenView: View {
-    let photo: PhotoAsset
-    @Environment(\.dismiss) private var dismiss
+private extension UIImage {
+    /// Returns a copy of the image drawn with .up orientation so EXIF rotation is baked in.
+    func normalizedOrientation() -> UIImage {
+        guard imageOrientation != .up else { return self }
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { _ in draw(in: CGRect(origin: .zero, size: size)) }
+    }
 
-    var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Color.black.ignoresSafeArea()
-
-            if let uiImage = UIImage(data: photo.imageData) {
-                Image(uiImage: uiImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .ignoresSafeArea()
-            }
-
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.title)
-                    .foregroundStyle(.white.opacity(0.8))
-                    .padding()
-            }
-        }
+    /// Downscales the image if its longest side exceeds `maxDimension`. Preserves aspect ratio.
+    func resizedIfNeeded(maxDimension: CGFloat) -> UIImage {
+        let longest = max(size.width, size.height)
+        guard longest > maxDimension else { return self }
+        let scale = maxDimension / longest
+        let newSize = CGSize(width: (size.width * scale).rounded(), height: (size.height * scale).rounded())
+        let renderer = UIGraphicsImageRenderer(size: newSize)
+        return renderer.image { _ in draw(in: CGRect(origin: .zero, size: newSize)) }
     }
 }
+

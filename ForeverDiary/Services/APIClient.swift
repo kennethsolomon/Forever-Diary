@@ -147,7 +147,7 @@ final class APIClient {
         let dateStamp = Self.dateStampFormatter.string(from: now)
 
         let service = "execute-api"
-        let region = AWSConfig.region
+        let region = AWSConfig.apiGatewayRegion
 
         guard let url = request.url,
               let host = url.host else {

@@ -8,6 +8,7 @@ struct DaySummarySheet: View {
     let onNavigate: (EntryDestination) -> Void
 
     @Environment(\.modelContext) private var modelContext
+    @Environment(SyncService.self) private var syncService
     @Query private var entries: [DiaryEntry]
 
     @State private var entryToDelete: DiaryEntry?
@@ -20,7 +21,7 @@ struct DaySummarySheet: View {
         self.onNavigate = onNavigate
         let key = monthDayKey
         let yearSort = SortDescriptor<DiaryEntry>(\.year, order: .reverse)
-        _entries = Query(filter: #Predicate<DiaryEntry> { $0.monthDayKey == key }, sort: [yearSort])
+        _entries = Query(filter: #Predicate<DiaryEntry> { $0.monthDayKey == key && $0.deletedAt == nil }, sort: [yearSort])
     }
 
     private var formattedTitle: String {
@@ -105,11 +106,10 @@ struct DaySummarySheet: View {
             .alert("Delete Entry?", isPresented: $showDeleteAlert) {
                 Button("Delete", role: .destructive) {
                     if let entryToDelete {
-                        modelContext.delete(entryToDelete)
-                        do {
-                            try modelContext.save()
-                        } catch {
-                            print("[ForeverDiary] Delete failed: \(error.localizedDescription)")
+                        let context = modelContext
+                        let entry = entryToDelete
+                        Task {
+                            await syncService.deleteEntry(entry, context: context)
                         }
                     }
                 }
@@ -148,6 +148,12 @@ struct DaySummarySheet: View {
 struct YearSummaryCard: View {
     let entry: DiaryEntry
 
+    @State private var galleryStartIndex: Int?
+
+    private var sortedPhotos: [PhotoAsset] {
+        entry.safePhotoAssets.sorted(by: { $0.createdAt < $1.createdAt })
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -180,35 +186,41 @@ struct YearSummaryCard: View {
                     .multilineTextAlignment(.leading)
             }
 
-            if !entry.safePhotoAssets.isEmpty {
+            if !sortedPhotos.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 4) {
-                        ForEach(Array(entry.safePhotoAssets.sorted(by: { $0.createdAt < $1.createdAt }).prefix(5)), id: \.id) { photo in
+                    HStack(spacing: 6) {
+                        ForEach(Array(sortedPhotos.prefix(5).enumerated()), id: \.element.id) { index, photo in
                             if let uiImage = UIImage(data: photo.thumbnailData) {
                                 Image(uiImage: uiImage)
                                     .resizable()
                                     .aspectRatio(contentMode: .fill)
-                                    .frame(width: 40, height: 40)
-                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                                    .frame(width: 64, height: 64)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .onTapGesture {
+                                        galleryStartIndex = index
+                                    }
                             }
                         }
-                        if entry.safePhotoAssets.count > 5 {
-                            Text("+\(entry.safePhotoAssets.count - 5)")
+                        if sortedPhotos.count > 5 {
+                            Text("+\(sortedPhotos.count - 5)")
                                 .font(.system(.caption2, design: .rounded, weight: .medium))
                                 .foregroundStyle(Color("textSecondary"))
-                                .frame(width: 40, height: 40)
+                                .frame(width: 64, height: 64)
                                 .background(
-                                    RoundedRectangle(cornerRadius: 6)
+                                    RoundedRectangle(cornerRadius: 8)
                                         .fill(Color("surfaceCard"))
                                 )
+                                .onTapGesture {
+                                    galleryStartIndex = 5
+                                }
                         }
                     }
                 }
             }
 
             HStack(spacing: 12) {
-                if !entry.safePhotoAssets.isEmpty {
-                    Label("\(entry.safePhotoAssets.count)", systemImage: "photo")
+                if !sortedPhotos.isEmpty {
+                    Label("\(sortedPhotos.count)", systemImage: "photo")
                         .font(.system(.caption, design: .rounded))
                         .foregroundStyle(Color("textSecondary"))
                 }
@@ -233,5 +245,11 @@ struct YearSummaryCard: View {
                 .fill(Color("surfaceCard"))
                 .shadow(color: .black.opacity(0.04), radius: 8, y: 2)
         )
+        .fullScreenCover(isPresented: Binding(
+            get: { galleryStartIndex != nil },
+            set: { if !$0 { galleryStartIndex = nil } }
+        )) {
+            PhotoGalleryView(photos: sortedPhotos, startIndex: galleryStartIndex ?? 0)
+        }
     }
 }
