@@ -57,6 +57,23 @@
 | 00:56 | iPhone 16 simulator not found | 1 | Used iPhone 17 Pro (Xcode 26 beta) |
 | 00:57 | Tab init is iOS 18+ only | 1 | Switched to .tabItem syntax for iOS 17 compat |
 
+## Session: 2026-03-10 (Calendar Navigation Freeze Fix)
+
+## Work Log
+- 2026-03-10 12:13 — Phase 1+2: Replaced NavigationLink with programmatic navigation in CalendarBrowserView.swift and TimelineView.swift
+  - Added `EntryDestination` Hashable struct for (monthDayKey, year) navigation values
+  - Added `@State navigationPath` to CalendarBrowserView with `.navigationDestination` handlers
+  - Renamed `TimelineView` → `DayTimelineView` to avoid conflict with SwiftUI's `TimelineView`
+  - MonthPageView: NavigationLink → Button with path.append(key)
+  - DayTimelineView: NavigationLink → Button with path.append(EntryDestination)
+  - "Add Entry": eagerly creates entry via modelContext before navigating
+  - Threaded `@Binding var navigationPath` through CalendarBrowserView → MonthPageView → DayTimelineView
+- 2026-03-10 12:14 — BUILD SUCCEEDED, 58/58 tests pass
+
+## Files Modified
+- ForeverDiary/Views/Calendar/CalendarBrowserView.swift
+- ForeverDiary/Views/Calendar/TimelineView.swift
+
 ## Session: 2026-03-10 (Cloud Sync)
 
 ## Work Log

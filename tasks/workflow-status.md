@@ -5,17 +5,17 @@
 
 | # | Step | Status | Notes |
 |---|------|--------|-------|
-| 1 | /brainstorm | done | all-AWS: DynamoDB + S3 + Cognito + Lambda, offline-first SwiftData sync |
-| 2 | /frontend-design | skipped | backend-only feature, no UI changes |
-| 3 | /write-plan | done | 5 phases, ~30 steps, all-AWS offline-first sync |
-| 4 | /execute-plan | done | all 5 phases complete, BUILD SUCCEEDED, 31/31 tests pass |
-| 5 | /commit | done | 9a695bd feat(sync), ed818b6 chore gitignore |
-| 6 | /write-tests | done | 27 new tests, 58/58 pass |
-| 7 | /commit | done | 2e42fec test(sync) |
-| 8 | /debug | skipped | user skipped |
-| 9 | /security-check | done | clean on attempt 2 |
-| 10 | /commit | done | db083d2 fix(security) |
-| 11 | /review | done | clean on attempt 3 |
-| 12 | /commit | skipped | review was clean, no new changes |
-| 13 | /finish-feature | done | branch created, changelog + arch log committed, 58/58 tests pass, no remote |
-| 14 | /release | >> next << | optional |
+| 1 | /brainstorm | done | calendar nav freeze: NavigationLink inside paged TabView conflict |
+| 2 | /frontend-design | skipped | bug fix, no UI changes |
+| 3 | /write-plan | done | 2 phases, 2 files, approved |
+| 4 | /execute-plan | done | 2 files changed, BUILD SUCCEEDED, 58/58 tests pass |
+| 5 | /commit | >> next << | |
+| 6 | /write-tests | not yet | |
+| 7 | /commit | not yet | conditional |
+| 8 | /debug | not yet | optional |
+| 9 | /security-check | not yet | loop |
+| 10 | /commit | not yet | conditional |
+| 11 | /review | not yet | loop |
+| 12 | /commit | not yet | conditional |
+| 13 | /finish-feature | not yet | |
+| 14 | /release | not yet | optional |
