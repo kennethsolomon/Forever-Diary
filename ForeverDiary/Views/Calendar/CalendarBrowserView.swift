@@ -1,91 +1,78 @@
 import SwiftUI
 import SwiftData
 
-struct DayDestination: Hashable {
-    let monthDayKey: String
-}
-
-struct EntryDestination: Hashable {
-    let monthDayKey: String
-    let year: Int
-}
+// MARK: - Calendar Browser
 
 struct CalendarBrowserView: View {
-    @State private var selectedMonth: Int = Calendar.current.component(.month, from: .now)
     @State private var navigationPath = NavigationPath()
+    @State private var sheetItem: DaySheetItem?
+    @State private var pendingNavigation: EntryDestination?
 
-    private let months = Calendar.current.monthSymbols
+    private let currentMonth = Calendar.current.component(.month, from: .now)
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
-            VStack(spacing: 0) {
-                TabView(selection: $selectedMonth) {
-                    ForEach(1...12, id: \.self) { month in
-                        MonthPageView(month: month, navigationPath: $navigationPath)
-                            .tag(month)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 32) {
+                        ForEach(1...12, id: \.self) { month in
+                            MonthSection(month: month) { key in
+                                sheetItem = DaySheetItem(id: key)
+                            }
+                            .id("month-\(month)")
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 12)
+                }
+                .onAppear {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(100))
+                        withAnimation(.none) {
+                            proxy.scrollTo("month-\(currentMonth)", anchor: .top)
+                        }
                     }
                 }
-                .tabViewStyle(.page(indexDisplayMode: .never))
             }
             .background(Color("backgroundPrimary"))
             .navigationTitle("Calendar")
             .navigationBarTitleDisplayMode(.large)
-            .navigationDestination(for: DayDestination.self) { dest in
-                DayTimelineView(monthDayKey: dest.monthDayKey, navigationPath: $navigationPath)
-            }
             .navigationDestination(for: EntryDestination.self) { dest in
                 EntryDetailView(monthDayKey: dest.monthDayKey, year: dest.year)
             }
-            .safeAreaInset(edge: .top) {
-                monthSelector
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 8)
-                    .background(Color("backgroundPrimary"))
+            .sheet(item: $sheetItem, onDismiss: {
+                if let dest = pendingNavigation {
+                    pendingNavigation = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        navigationPath.append(dest)
+                    }
+                }
+            }) { item in
+                DaySummarySheet(monthDayKey: item.monthDayKey) { dest in
+                    pendingNavigation = dest
+                    sheetItem = nil
+                }
+                .presentationDetents([.medium, .large])
             }
-        }
-    }
-
-    private var monthSelector: some View {
-        HStack {
-            Button {
-                withAnimation { selectedMonth = max(1, selectedMonth - 1) }
-            } label: {
-                Image(systemName: "chevron.left")
-                    .foregroundStyle(selectedMonth > 1 ? Color("accentSlate") : Color("textSecondary").opacity(0.3))
-            }
-            .disabled(selectedMonth <= 1)
-
-            Spacer()
-
-            Text(months[selectedMonth - 1].uppercased())
-                .font(.system(.title2, design: .rounded, weight: .semibold))
-                .foregroundStyle(Color("textPrimary"))
-                .animation(.none, value: selectedMonth)
-
-            Spacer()
-
-            Button {
-                withAnimation { selectedMonth = min(12, selectedMonth + 1) }
-            } label: {
-                Image(systemName: "chevron.right")
-                    .foregroundStyle(selectedMonth < 12 ? Color("accentSlate") : Color("textSecondary").opacity(0.3))
-            }
-            .disabled(selectedMonth >= 12)
         }
     }
 }
 
-// MARK: - Month Page
+// MARK: - Month Section
 
-struct MonthPageView: View {
+struct MonthSection: View {
     let month: Int
-    @Binding var navigationPath: NavigationPath
+    let onDayTapped: (String) -> Void
 
     @Query private var entries: [DiaryEntry]
 
-    init(month: Int, navigationPath: Binding<NavigationPath>) {
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
+    private let todayMonth = Calendar.current.component(.month, from: .now)
+    private let todayDay = Calendar.current.component(.day, from: .now)
+
+    init(month: Int, onDayTapped: @escaping (String) -> Void) {
         self.month = month
-        self._navigationPath = navigationPath
+        self.onDayTapped = onDayTapped
         let prefix = String(format: "%02d-", month)
         _entries = Query(filter: #Predicate<DiaryEntry> { $0.monthDayKey.starts(with: prefix) })
     }
@@ -99,72 +86,159 @@ struct MonthPageView: View {
         return range.count
     }
 
-    private let todayMonth = Calendar.current.component(.month, from: .now)
-    private let todayDay = Calendar.current.component(.day, from: .now)
+    private var weekdayOffset: Int {
+        var components = DateComponents()
+        components.month = month
+        components.day = 1
+        components.year = Calendar.current.component(.year, from: .now)
+        guard let date = Calendar.current.date(from: components) else { return 0 }
+        let weekday = Calendar.current.component(.weekday, from: date)
+        return (weekday - Calendar.current.firstWeekday + 7) % 7
+    }
+
+    private var entriesByDay: [String: [DiaryEntry]] {
+        Dictionary(grouping: entries, by: \.monthDayKey)
+    }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 2) {
+        let grouped = entriesByDay
+        VStack(spacing: 12) {
+            Text(Calendar.current.monthSymbols[month - 1])
+                .font(.system(.title, design: .rounded, weight: .bold))
+                .foregroundStyle(Color("textPrimary"))
+                .frame(maxWidth: .infinity)
+
+            LazyVGrid(columns: columns, spacing: 4) {
+                ForEach(0..<weekdayOffset, id: \.self) { _ in
+                    Color.clear
+                        .aspectRatio(1, contentMode: .fit)
+                }
+
                 ForEach(1...daysInMonth, id: \.self) { day in
                     let key = String(format: "%02d-%02d", month, day)
-                    let yearEntries = entries.filter { $0.monthDayKey == key }
+                    let dayEntries = grouped[key] ?? []
+                    let allPhotos = dayEntries.flatMap { $0.safePhotoAssets }
+                    let thumbnails = Array(allPhotos.prefix(4).map { $0.thumbnailData })
                     let isToday = month == todayMonth && day == todayDay
 
-                    Button {
-                        navigationPath.append(DayDestination(monthDayKey: key))
-                    } label: {
-                        DayRow(day: day, yearCount: yearEntries.count, isToday: isToday)
+                    DayCell(
+                        day: day,
+                        isToday: isToday,
+                        hasEntries: !dayEntries.isEmpty,
+                        thumbnails: thumbnails,
+                        totalPhotoCount: allPhotos.count
+                    ) {
+                        onDayTapped(key)
                     }
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 8)
         }
     }
 }
 
-// MARK: - Day Row
+// MARK: - Day Cell
 
-struct DayRow: View {
+struct DayCell: View {
     let day: Int
-    let yearCount: Int
     let isToday: Bool
+    let hasEntries: Bool
+    let thumbnails: [Data]
+    let totalPhotoCount: Int
+    let onTap: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            if isToday {
-                Image(systemName: "star.fill")
-                    .font(.system(size: 10))
-                    .foregroundStyle(Color("accentBright"))
-                    .frame(width: 14)
-            } else {
-                Spacer().frame(width: 14)
-            }
-
-            Text("\(day)")
-                .font(.system(.body, design: .rounded, weight: isToday ? .bold : .regular))
-                .foregroundStyle(isToday ? Color("accentBright") : Color("textPrimary"))
-                .frame(width: 30, alignment: .leading)
-
-            HStack(spacing: 4) {
-                ForEach(0..<yearCount, id: \.self) { _ in
+        Button(action: onTap) {
+            ZStack {
+                if thumbnails.isEmpty {
                     Circle()
-                        .fill(Color("accentSlate"))
-                        .frame(width: 6, height: 6)
+                        .fill(hasEntries ? Color("accentBright").opacity(0.1) : Color.clear)
+
+                    Text("\(day)")
+                        .font(.system(.callout, design: .rounded, weight: isToday ? .bold : .medium))
+                        .foregroundStyle(isToday ? Color("accentBright") : Color("textPrimary"))
+                } else {
+                    collageView
+                        .clipShape(Circle())
+
+                    Text("\(day)")
+                        .font(.system(.callout, design: .rounded, weight: .bold))
+                        .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.7), radius: 2, y: 1)
+
+                    if isToday {
+                        Circle()
+                            .stroke(Color("accentBright"), lineWidth: 2.5)
+                    }
                 }
             }
-
-            Spacer()
-
-            Image(systemName: "chevron.right")
-                .font(.system(size: 10))
-                .foregroundStyle(Color("textSecondary").opacity(0.4))
+            .aspectRatio(1, contentMode: .fit)
+            .overlay(alignment: .bottomTrailing) {
+                if totalPhotoCount > 4 {
+                    Text("\(totalPhotoCount)")
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .frame(width: 16, height: 16)
+                        .background(Circle().fill(Color("accentBright")))
+                        .offset(x: 2, y: 2)
+                }
+            }
         }
-        .padding(.vertical, 12)
-        .padding(.horizontal, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isToday ? Color("accentBright").opacity(0.06) : .clear)
-        )
+        .buttonStyle(ScaleButtonStyle())
+    }
+
+    @ViewBuilder
+    private var collageView: some View {
+        switch thumbnails.count {
+        case 1:
+            thumbnailImage(thumbnails[0])
+        case 2:
+            HStack(spacing: 1) {
+                thumbnailImage(thumbnails[0])
+                thumbnailImage(thumbnails[1])
+            }
+        case 3:
+            HStack(spacing: 1) {
+                thumbnailImage(thumbnails[0])
+                VStack(spacing: 1) {
+                    thumbnailImage(thumbnails[1])
+                    thumbnailImage(thumbnails[2])
+                }
+            }
+        default:
+            VStack(spacing: 1) {
+                HStack(spacing: 1) {
+                    thumbnailImage(thumbnails[0])
+                    thumbnailImage(thumbnails[1])
+                }
+                HStack(spacing: 1) {
+                    thumbnailImage(thumbnails[2])
+                    thumbnailImage(thumbnails.count > 3 ? thumbnails[3] : thumbnails[2])
+                }
+            }
+        }
+    }
+
+    private func thumbnailImage(_ data: Data) -> some View {
+        Group {
+            if let uiImage = UIImage(data: data) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                Color("surfaceCard")
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
+    }
+}
+
+// MARK: - Scale Button Style
+
+struct ScaleButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.93 : 1.0)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: configuration.isPressed)
     }
 }

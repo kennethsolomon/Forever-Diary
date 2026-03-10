@@ -16,18 +16,18 @@ final class CalendarNavigationTests: XCTestCase {
         return ModelContext(container)
     }
 
-    // MARK: - DayDestination
+    // MARK: - DaySheetItem
 
-    func testDayDestinationEquality() {
-        let a = DayDestination(monthDayKey: "03-10")
-        let b = DayDestination(monthDayKey: "03-10")
-        XCTAssertEqual(a, b)
+    func testDaySheetItemIdentifiable() {
+        let item = DaySheetItem(id: "03-10")
+        XCTAssertEqual(item.id, "03-10")
+        XCTAssertEqual(item.monthDayKey, "03-10")
     }
 
-    func testDayDestinationInequality() {
-        let a = DayDestination(monthDayKey: "03-10")
-        let b = DayDestination(monthDayKey: "03-11")
-        XCTAssertNotEqual(a, b)
+    func testDaySheetItemUniqueIds() {
+        let a = DaySheetItem(id: "03-10")
+        let b = DaySheetItem(id: "03-11")
+        XCTAssertNotEqual(a.id, b.id)
     }
 
     // MARK: - EntryDestination
@@ -121,7 +121,7 @@ final class CalendarNavigationTests: XCTestCase {
         XCTAssertNotNil(existing, "Should find existing entry before creating duplicate")
     }
 
-    // MARK: - Month Prefix Query (mirrors MonthPageView @Query)
+    // MARK: - Month Prefix Query (mirrors MonthSection @Query)
 
     func testMonthPrefixQueryFiltersCorrectly() throws {
         let context = try makeContext()
@@ -147,7 +147,7 @@ final class CalendarNavigationTests: XCTestCase {
         XCTAssertTrue(results.allSatisfy { $0.monthDayKey.hasPrefix("03-") })
     }
 
-    // MARK: - MonthDayKey Query with Year Sort (mirrors DayTimelineView @Query)
+    // MARK: - MonthDayKey Query with Year Sort (mirrors DaySummarySheet @Query)
 
     func testMonthDayKeyQuerySortedByYearDescending() throws {
         let context = try makeContext()

@@ -99,3 +99,58 @@
 - 2026-03-10 08:16 — Phase 4: Entries now set syncStatus="pending" on modification
 - 2026-03-10 08:17 — Phase 5: Added first-launch detection (empty local DB + Keychain identity → full pull + photo download)
 - 2026-03-10 08:17 — All 31 existing tests pass, BUILD SUCCEEDED
+
+## Session: 2026-03-10 (Calendar UI + Theme + View Mode Redesign)
+
+## Work Log
+- 2026-03-10 13:45 — Phase 1: Updated 7 color assets to new palette (dark: #222831/#393E46/#00ADB5/#EEEEEE, light: white/#F5F6F8/#00ADB5/#222831)
+- 2026-03-10 13:46 — Phase 1: Added AppTheme enum + @AppStorage("appTheme") to ContentView with .preferredColorScheme()
+- 2026-03-10 13:46 — Phase 1: Added Appearance section with segmented picker to SettingsView
+- 2026-03-10 13:46 — Phase 1: Changed tab tint from accentSlate to accentBright — BUILD SUCCEEDED
+- 2026-03-10 13:48 — Phase 2: Full rewrite of CalendarBrowserView — vertical ScrollView with 12 MonthSections, 7-column LazyVGrid
+- 2026-03-10 13:48 — Phase 2: Built DayCell with empty/photo/collage/today states, ScaleButtonStyle for tap feedback
+- 2026-03-10 13:48 — Phase 2: Built photo collage (1/2/3/4+ images in circle), count badge overlay
+- 2026-03-10 13:49 — Phase 2: Repurposed TimelineView.swift → DaySummarySheet + YearSummaryCard
+- 2026-03-10 13:49 — Phase 2: Sheet with .medium/.large detents, onDismiss → navigation handoff via pendingNavigation — BUILD SUCCEEDED
+- 2026-03-10 13:50 — Phase 3: Added isViewMode toggle + toolbar button to HomeView and EntryDetailView
+- 2026-03-10 13:50 — Phase 3: Built MarkdownTextView with AttributedString(markdown:) + list bullet conversion
+- 2026-03-10 13:50 — Phase 3: Tap-to-edit gesture on rendered markdown, .easeInOut crossfade — BUILD SUCCEEDED
+- 2026-03-10 13:51 — Phase 4: Fixed CalendarNavigationTests (DayDestination → DaySheetItem)
+- 2026-03-10 13:51 — All 69 tests pass, BUILD SUCCEEDED
+
+## Files Modified
+- ForeverDiary/Assets.xcassets/Colors/ (7 colorset Contents.json files)
+- ForeverDiary/Views/ContentView.swift
+- ForeverDiary/Views/Settings/SettingsView.swift
+- ForeverDiary/Views/Calendar/CalendarBrowserView.swift (full rewrite)
+- ForeverDiary/Views/Calendar/TimelineView.swift (full rewrite → DaySummarySheet)
+- ForeverDiary/Views/Home/HomeView.swift
+- ForeverDiary/Views/Entry/EntryDetailView.swift
+- ForeverDiaryTests/CalendarNavigationTests.swift
+
+## Test Results
+| Command | Expected | Actual | Status |
+|---------|----------|--------|--------|
+| xcodebuild build (iPhone 17 Pro Sim) | BUILD SUCCEEDED | BUILD SUCCEEDED | PASS |
+| xcodebuild test (iPhone 17 Pro Sim) | 69/69 tests pass | 69/69 tests pass | PASS |
+
+## Session: 2026-03-10 (Write Tests for Theme, Calendar, Markdown)
+
+## Work Log
+- 2026-03-10 14:14 — Fixed compile error: MarkdownTextView.body referenced deleted `renderedMarkdown`, changed to `Self.parseMarkdown(text)`
+- 2026-03-10 14:14 — Created `ForeverDiaryTests/ThemeTests.swift` — 7 tests for AppTheme enum (raw values, colorScheme mapping, allCases, init from invalid)
+- 2026-03-10 14:14 — Created `ForeverDiaryTests/MarkdownTests.swift` — 13 tests for MarkdownTextView.parseMarkdown (plain, bold, italic, strikethrough, code, bold+italic, dash lists, asterisk lists, mixed, multiline, empty lines, edge cases)
+- 2026-03-10 14:14 — Regenerated Xcode project via xcodegen
+- 2026-03-10 14:14 — All 89 tests pass (20 new), BUILD SUCCEEDED
+
+## Files Created
+- ForeverDiaryTests/ThemeTests.swift
+- ForeverDiaryTests/MarkdownTests.swift
+
+## Files Modified
+- ForeverDiary/Views/Home/HomeView.swift (fixed renderedMarkdown → Self.parseMarkdown(text))
+
+## Test Results
+| Command | Expected | Actual | Status |
+|---------|----------|--------|--------|
+| xcodebuild test (iPhone 17 Pro Sim) | 89/89 tests pass | 89/89 tests pass | PASS |

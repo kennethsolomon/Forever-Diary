@@ -5,6 +5,7 @@ struct HomeView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(SyncService.self) private var syncService
     @FocusState private var isTextEditorFocused: Bool
+    @State private var isViewMode = false
     @State private var diaryText = ""
     @State private var showSavedIndicator = false
     @State private var saveTask: Task<Void, Never>?
@@ -45,6 +46,21 @@ struct HomeView: View {
             }
             .background(Color("backgroundPrimary"))
             .onAppear(perform: loadTodayEntry)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            isViewMode.toggle()
+                            if !isViewMode {
+                                isTextEditorFocused = true
+                            }
+                        }
+                    } label: {
+                        Image(systemName: isViewMode ? "square.and.pencil" : "eye")
+                            .foregroundStyle(Color("accentBright"))
+                    }
+                }
+            }
         }
     }
 
@@ -78,31 +94,51 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - Text Editor
+    // MARK: - Text Area
 
     private var textEditor: some View {
-        ZStack(alignment: .topLeading) {
-            if diaryText.isEmpty {
-                Text("What's on your mind today?")
-                    .font(.system(.body, design: .serif))
-                    .foregroundStyle(Color("textSecondary").opacity(0.6))
-                    .padding(.top, 8)
-                    .padding(.leading, 5)
-                    .allowsHitTesting(false)
-            }
+        Group {
+            if isViewMode {
+                ScrollView {
+                    MarkdownTextView(text: diaryText)
+                        .padding(.top, 8)
+                        .padding(.horizontal, 5)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        isViewMode = false
+                        isTextEditorFocused = true
+                    }
+                }
+            } else {
+                ZStack(alignment: .topLeading) {
+                    if diaryText.isEmpty {
+                        Text("What's on your mind today?")
+                            .font(.system(.body, design: .serif))
+                            .foregroundStyle(Color("textSecondary").opacity(0.6))
+                            .padding(.top, 8)
+                            .padding(.leading, 5)
+                            .allowsHitTesting(false)
+                    }
 
-            TextEditor(text: $diaryText)
-                .font(.system(.body, design: .serif))
-                .foregroundStyle(Color("textPrimary"))
-                .scrollContentBackground(.hidden)
-                .focused($isTextEditorFocused)
-                .scrollDismissesKeyboard(.interactively)
-                .onChange(of: diaryText) { _, newValue in
-                    debounceSave(text: newValue)
+                    TextEditor(text: $diaryText)
+                        .font(.system(.body, design: .serif))
+                        .foregroundStyle(Color("textPrimary"))
+                        .scrollContentBackground(.hidden)
+                        .focused($isTextEditorFocused)
+                        .scrollDismissesKeyboard(.interactively)
+                        .onChange(of: diaryText) { _, newValue in
+                            debounceSave(text: newValue)
+                        }
+                        .onAppear {
+                            if !isViewMode {
+                                isTextEditorFocused = true
+                            }
+                        }
                 }
-                .onAppear {
-                    isTextEditorFocused = true
-                }
+            }
         }
     }
 

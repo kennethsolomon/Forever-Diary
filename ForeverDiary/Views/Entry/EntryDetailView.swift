@@ -23,6 +23,8 @@ struct EntryDetailView: View {
     @State private var saveTask: Task<Void, Never>?
     @State private var locationSaveTask: Task<Void, Never>?
     @State private var showSaved = false
+    @State private var isViewMode = false
+    @FocusState private var isDiaryFocused: Bool
 
     @Query private var templates: [CheckInTemplate]
 
@@ -60,6 +62,21 @@ struct EntryDetailView: View {
         .background(Color("backgroundPrimary"))
         .navigationTitle(formattedDate)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        isViewMode.toggle()
+                        if !isViewMode {
+                            isDiaryFocused = true
+                        }
+                    }
+                } label: {
+                    Image(systemName: isViewMode ? "square.and.pencil" : "eye")
+                        .foregroundStyle(Color("accentBright"))
+                }
+            }
+        }
         .fullScreenCover(item: $fullScreenPhoto) { photo in
             PhotoFullScreenView(photo: photo)
         }
@@ -127,24 +144,38 @@ struct EntryDetailView: View {
 
     private var diarySection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ZStack(alignment: .topLeading) {
-                if diaryText.isEmpty {
-                    Text("Write about your day...")
-                        .font(.system(.body, design: .serif))
-                        .foregroundStyle(Color("textSecondary").opacity(0.6))
-                        .padding(.top, 8)
-                        .padding(.leading, 5)
-                        .allowsHitTesting(false)
-                }
-
-                TextEditor(text: $diaryText)
-                    .font(.system(.body, design: .serif))
-                    .foregroundStyle(Color("textPrimary"))
-                    .scrollContentBackground(.hidden)
-                    .frame(minHeight: 200)
-                    .onChange(of: diaryText) { _, newValue in
-                        debounceSave(text: newValue)
+            if isViewMode {
+                MarkdownTextView(text: diaryText)
+                    .frame(minHeight: 200, alignment: .topLeading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            isViewMode = false
+                            isDiaryFocused = true
+                        }
                     }
+            } else {
+                ZStack(alignment: .topLeading) {
+                    if diaryText.isEmpty {
+                        Text("Write about your day...")
+                            .font(.system(.body, design: .serif))
+                            .foregroundStyle(Color("textSecondary").opacity(0.6))
+                            .padding(.top, 8)
+                            .padding(.leading, 5)
+                            .allowsHitTesting(false)
+                    }
+
+                    TextEditor(text: $diaryText)
+                        .font(.system(.body, design: .serif))
+                        .foregroundStyle(Color("textPrimary"))
+                        .scrollContentBackground(.hidden)
+                        .frame(minHeight: 200)
+                        .focused($isDiaryFocused)
+                        .onChange(of: diaryText) { _, newValue in
+                            debounceSave(text: newValue)
+                        }
+                }
             }
         }
     }
