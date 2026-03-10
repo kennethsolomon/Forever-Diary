@@ -3,32 +3,97 @@
 
 # forever-diary
 
-Project instructions for Claude Code.
+A daily diary iOS app with offline-first SwiftData storage and AWS cloud sync (DynamoDB + S3 + Cognito + Lambda). Entries are keyed by month-day with year layering, enabling "on this day" views across years.
 
 ## Tech Stack
 
 | Tech | Details |
 |------|---------|
-| **Language** | Swift |
+| **Language** | Swift 5.9 |
 | **Framework** | SwiftUI (iOS 17+) |
-| **Database** | SwiftData + CloudKit auto-sync |
+| **Database** | SwiftData (offline-first) + AWS sync |
+| **Backend** | AWS Lambda (Node.js/CommonJS), DynamoDB, S3, Cognito |
 | **UI** | SwiftUI, SF Symbols, Swift Charts |
-| **Testing** | XCTest |
+| **Project Gen** | XcodeGen (`project.yml`) |
+| **Testing** | XCTest (58 tests) |
+| **Bundle ID** | `com.foreverdiary.app` |
+
+## Project Structure
+
+```
+ForeverDiary/
+├── App/                    # ForeverDiaryApp.swift (entry point)
+├── Models/                 # SwiftData models
+│   ├── DiaryEntry.swift        # Core entry (monthDayKey + year unique)
+│   ├── CheckInTemplate.swift   # Configurable check-in fields
+│   ├── CheckInValue.swift      # Per-entry check-in values
+│   ├── CheckInFieldType.swift  # Field type enum (bool/text/number)
+│   └── PhotoAsset.swift        # Photo attachment metadata
+├── Views/
+│   ├── ContentView.swift       # Root tab view
+│   ├── Home/HomeView.swift     # Today's entry
+│   ├── Entry/EntryDetailView.swift
+│   ├── Calendar/               # CalendarBrowserView, TimelineView
+│   ├── Analytics/AnalyticsView.swift
+│   └── Settings/SettingsView.swift
+├── Services/
+│   ├── SyncService.swift       # Offline-first AWS sync orchestrator
+│   ├── APIClient.swift         # AWS API Gateway / Lambda calls
+│   ├── CognitoAuthService.swift # AWS Cognito auth
+│   ├── AWSConfig.swift         # AWS config constants
+│   ├── KeychainHelper.swift    # Secure token storage
+│   ├── LocationService.swift   # CLLocationManager wrapper
+│   └── TemplateSeedService.swift # Default check-in templates
+├── Assets.xcassets/
+├── Info.plist              # Location, photo, camera permissions
+└── ForeverDiary.entitlements
+ForeverDiaryTests/          # 58 XCTest tests (6 test files)
+aws/lambda/                 # Lambda function (index.mjs, DynamoDB + S3 SDK)
+Logo/                       # SVG logo asset
+docs/plans/                 # Implementation plans
+tasks/                      # Workflow tracking, findings, progress
+project.yml                 # XcodeGen project definition
+```
 
 ## Key Directories
 
 | Path | Purpose |
 |------|---------|
+| `ForeverDiary/` | iOS app source (SwiftUI + SwiftData) |
+| `ForeverDiary/Models/` | SwiftData `@Model` classes |
+| `ForeverDiary/Views/` | SwiftUI views organized by feature |
+| `ForeverDiary/Services/` | Sync, auth, API, location services |
+| `ForeverDiaryTests/` | XCTest unit tests |
+| `aws/lambda/` | AWS Lambda backend (Node.js) |
 | `tasks/` | Planning + findings + progress + security logs |
 | `docs/plans/` | Implementation plans |
-| `ForeverDiary/` | Xcode project root (once created) |
 
 ## Build & Run
 
 ```bash
+# Regenerate Xcode project from project.yml (requires xcodegen):
+xcodegen generate
+
 # Build and run via Xcode or:
 xcodebuild -scheme ForeverDiary -destination 'platform=iOS Simulator,name=iPhone 16'
+
+# Run tests:
+xcodebuild test -scheme ForeverDiary -destination 'platform=iOS Simulator,name=iPhone 16'
 ```
+
+## Key Documentation
+
+- Implementation plan: `docs/plans/2026-03-10-forever-diary-v1-implementation.md`
+- Changelog: `CHANGELOG.md`
+- Architectural decisions: `.claude/docs/architectural_change_log/`
+
+## Important Context
+
+- Entries use `(monthDayKey, year)` as unique constraint — enables "on this day" across years
+- Sync is offline-first: SwiftData is source of truth, AWS sync is secondary
+- Auth uses AWS Cognito; tokens stored in Keychain via `KeychainHelper`
+- Permissions: location (when-in-use), photo library, camera
+- XcodeGen generates `.xcodeproj` from `project.yml` — do not edit `.xcodeproj` directly
 
 ## Workflow
 
