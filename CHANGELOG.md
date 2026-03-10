@@ -9,6 +9,11 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ## [Unreleased]
 
 ### Added
+- Email/password authentication via AWS Cognito User Pool (sign-up, confirm, sign-in, forgot password, reset password)
+- Google Sign-In via OAuth 2.0 with PKCE, federated through Cognito Identity Pool
+- Full-screen photo gallery with swipe navigation, pinch-to-zoom (1x–4x), and dismiss-by-drag
+- Account section in Settings showing signed-in email and sign-out with confirmation
+- Soft-delete tombstone system: deleted entries sync the deletion to all devices and don't reappear after cloud pull
 - Write-first home screen with debounced auto-save and "Saved" indicator
 - Yearless calendar with month carousel and day grid navigation
 - Timeline view showing reverse-chronological entries across years for the same date
@@ -37,6 +42,11 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - 90 unit tests (theme, markdown parsing, calendar navigation)
 
 ### Fixed
+- Ghost entry bug: deleted entries no longer reappear after cloud sync (tombstone last-write-wins)
+- Creating an entry immediately after deleting it no longer causes duplicate DynamoDB sk errors
+- Google OAuth session that fails to start now surfaces an error instead of hanging indefinitely
+- Remote child cleanup (check-ins, photos) now skipped when local save fails, preventing orphaned remote records
+- Photo gallery pinch scale no longer jumps when swiping to a new photo mid-gesture
 - Calendar navigation freeze when tapping any date — replaced NavigationLink with programmatic navigation to avoid gesture conflict with paged TabView
 - Renamed TimelineView to DayTimelineView to avoid SwiftUI naming conflict
 - "Add Entry" now eagerly creates the entry before navigating to prevent self-destructing NavigationLink
@@ -49,6 +59,11 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Critical save paths use do/catch with error logging instead of silent `try?`
 
 ### Security
+- Google OAuth uses PKCE (SHA-256 code challenge) — no client secret required for iOS
+- Token exchange uses RFC 3986 unreserved character encoding (alphanumerics + `-._~`) per spec
+- JWT claims extracted from ID token for display only; full token verified server-side by Cognito
+- Google OAuth `session.start()` failure now properly rejected instead of silently ignored
+- Cognito auth state not partially cleared mid-auth-flow to prevent inconsistent `isAuthenticated` state
 - Test host detection via `NSClassFromString("XCTestCase")` to skip CloudKit in test mode
 - Analytics streak loop bounded to 3,650 iterations
 - Photo size validated against 10MB limit before storage
