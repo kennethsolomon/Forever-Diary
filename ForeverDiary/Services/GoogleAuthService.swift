@@ -79,8 +79,10 @@ final class GoogleAuthService: NSObject {
             "grant_type": "authorization_code",
             "code_verifier": codeVerifier
         ]
+        // RFC 3986 unreserved chars only — correct for application/x-www-form-urlencoded
+        let formAllowed = CharacterSet.alphanumerics.union(.init(charactersIn: "-._~"))
         request.httpBody = params
-            .map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")" }
+            .map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: formAllowed) ?? "")" }
             .joined(separator: "&")
             .data(using: .utf8)
 
@@ -98,6 +100,8 @@ final class GoogleAuthService: NSObject {
 
     // MARK: - Helpers
 
+    /// Reads a claim from a JWT payload for display purposes only.
+    /// The signature is NOT verified here — Cognito validates the full token server-side before issuing credentials.
     private func jwtClaim(_ claim: String, from token: String) -> String? {
         let parts = token.components(separatedBy: ".")
         guard parts.count == 3 else { return nil }

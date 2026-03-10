@@ -320,6 +320,72 @@ _None found._
 
 ---
 
+# Security Audit — 2026-03-10 (Auth + Gallery + Sync Tombstone)
+
+**Scope:** Changed files on `main` (new commit bce691f)
+**Stack:** Swift / SwiftUI (iOS 17+) + Node.js Lambda
+**Files audited:** 14 (ForeverDiaryApp.swift, AWSConfig.swift, CognitoAuthService.swift, GoogleAuthService.swift, SyncService.swift, SignInView.swift, CalendarBrowserView.swift, TimelineView.swift, PhotoGalleryView.swift, EntryDetailView.swift, HomeView.swift, SettingsView.swift, DiaryEntry.swift, index.mjs)
+
+## Critical (must fix before deploy)
+
+_None found._
+
+## High (fix before production)
+
+_None found._
+
+## Medium (should fix)
+
+_None found._
+
+## Low / Informational
+
+- **[GoogleAuthService.swift:101-111]** `jwtClaim()` parses JWT payload without verifying the signature ✅ **Fixed** — clarifying comment added
+  **Standard:** Informational — CWE-347 (Improper Verification of Cryptographic Signature)
+  **Risk:** The extracted `email` is used only for local display and Keychain storage (user label), never for authorization decisions. Cognito validates the full JWT server-side before issuing credentials.
+
+- **[GoogleAuthService.swift:58]** `prefersEphemeralWebBrowserSession = false` shares cookies with system Safari
+  **Standard:** Informational — CWE-539 (Use of Persistent Cookies Containing Sensitive Information)
+  **Risk:** Google session cookies persist in the browser across app reinstalls or sign-outs until the user manually clears Safari cookies. This enables SSO (intentional), but also means a device-sharing user might silently auto-complete Google auth. Acceptable for a personal diary app.
+  **Recommendation:** No action required. If stricter isolation is needed, set to `true` to require re-authentication every time.
+
+- **[GoogleAuthService.swift:83]** Form-encoded body uses `.urlQueryAllowed` charset — technically incorrect for `application/x-www-form-urlencoded` ✅ **Fixed** — now uses RFC 3986 unreserved charset (`alphanumerics + -._~`)
+  **Standard:** Informational — RFC 3986 / OAuth 2.0 token endpoint encoding
+  **Risk:** `.urlQueryAllowed` does not encode `+` or `=`. Fixed to use `CharacterSet.alphanumerics.union(.init(charactersIn: "-._~"))` which correctly encodes all reserved characters.
+
+- **[SyncService.swift:87-117]** `deletePhoto()` still uses hard-delete — ghost photo possible on full pull after failed remote delete
+  **Standard:** Informational — same root cause as ghost entry (now fixed with soft-delete)
+  **Risk:** If `deletePhoto()` remote call fails, the photo record stays in DynamoDB. On a fresh install or UserDefaults reset (no `lastSyncDate`), `pullRemote` fetches all records including the orphaned photo metadata. `upsertPhoto` creates a stub record, and `downloadPhotos` re-downloads the image. The photo would reappear in the entry. Lower impact than ghost entries since the user likely has the photo in their Photos library anyway.
+  **Recommendation:** Consider applying the same soft-delete tombstone pattern to `PhotoAsset` in a future iteration. Not blocking for this release.
+
+## Passed Checks
+
+- **A01 Broken Access Control** — Google OAuth uses PKCE (state not required with PKCE, but code verifier binding prevents CSRF). Cognito identity is server-scoped; userId in Lambda comes from request context, not client payload. S3 key prefix scoping unchanged and verified clean.
+- **A02 Cryptographic Failures** — PKCE uses `SecRandomCopyBytes` + SHA-256 (CryptoKit). Code verifier is 256-bit entropy. All tokens transmitted over HTTPS only.
+- **A03 Injection** — No user input reaches shell or SQL. SwiftData predicates type-safe. DynamoDB `marshall()` used.
+- **A04 Insecure Design** — Auth flows use Cognito-managed rate limiting. Password minimum 8 chars enforced client-side + Cognito policy. Lambda item cap (100) unchanged.
+- **A05 Security Misconfiguration** — CORS header absent (verified from prior fix). No verbose stack traces exposed.
+- **A06 Vulnerable Components** — No new third-party dependencies. `AuthenticationServices` is Apple framework. `CryptoKit` is Apple framework.
+- **A07 Auth Failures** — Tokens stored in Keychain with `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`. `refreshIfNeeded()` auto-refreshes before API calls. Password never logged.
+- **A08 Data Integrity** — Soft-delete tombstone uses `updatedAt`-based last-write-wins. Entry cannot be resurrected if tombstone is newer. `deletedAt >= local.updatedAt` correctly favors remote deletion.
+- **A09 Logging** — No PII in new log lines. Auth errors surface only `localizedDescription` (Cognito human-readable messages).
+- **A10 SSRF** — All outbound URLs are hardcoded to known Google and AWS endpoints. No user-controlled URL destinations.
+- **PhotoGalleryView** — Displays only in-app `PhotoAsset.imageData` from SwiftData. Scale bounded 1.0–4.0. No file system access. No injection surface.
+- **SignInView** — Password never stored in UserDefaults or logged. `@State` vars cleared on view teardown. Email trimmed and lowercased before network use. Confirmation code stripped of whitespace.
+- **DiaryEntry.deletedAt** — Non-nil only during tombstone window; filtered from all `@Query` predicates so soft-deleted entries are invisible to the user.
+
+## Summary
+
+| Severity | Count |
+|----------|-------|
+| Critical | 0 |
+| High     | 0 |
+| Medium   | 0 |
+| Low      | 4 |
+| **Total** | **4** |
+
+---
+
 # Security Audit — 2026-03-10 (Calendar Navigation Fix)
 
 **Scope:** Changed files on branch `fix/calendar-navigation-freeze`
