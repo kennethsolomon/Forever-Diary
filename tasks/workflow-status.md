@@ -15,7 +15,7 @@
 | 8 | /debug | done | 4 bugs fixed: day-of-week headers, logged dot indicator, landscape image clipping, S3 image optimize (0.85q + resize + orientation) |
 | 9 | /security-check | done | 0 critical/high/medium, 4 low (informational only) — attempt 1 |
 | 10 | /commit | done | 560e2af — fix form encoding + JWT comment |
-| 11 | /review | >> next << | loop |
-| 12 | /commit | not yet | conditional |
-| 13 | /finish-feature | not yet | |
-| 14 | /release | not yet | optional |
+| 11 | /review | done | clean on attempt 3 — 0 critical, 0 warning, 0 nitpick |
+| 12 | /commit | done | 1ab598a + 6ae94a9 — review fixes |
+| 13 | /finish-feature | done | changelog + arch log updated, pushed to main |
+| 14 | /release | skipped | user confirmed skip |
