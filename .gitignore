@@ -33,6 +33,9 @@ Package.resolved
 .Spotlight-V100
 .Trashes
 
+# Node
+node_modules/
+
 # Misc
 *.swp
 *.lock
