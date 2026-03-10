@@ -19,8 +19,14 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Location tagging via CoreLocation reverse geocoding
 - Analytics dashboard with current/longest streak, completion rate, and habit charts
 - Settings screen with template management and data export
-- CloudKit auto-sync with local-only and in-memory fallback
-- 31 unit tests covering models, services, and integration
+- AWS cloud sync with DynamoDB, S3, and Cognito (replaces CloudKit)
+- Anonymous authentication via Cognito Identity Pool
+- SigV4-signed API requests to API Gateway + Lambda
+- Offline-first sync: entries, templates, check-in values, and photos
+- S3 photo upload/download with presigned URLs
+- Debounced sync triggered automatically on data changes
+- Settings screen shows sync status, last sync time, and manual sync button
+- 58 unit tests covering models, services, and cloud sync
 
 ### Fixed
 - Removed `@Attribute(.unique)` from SwiftData models for CloudKit compatibility
@@ -35,3 +41,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Test host detection via `NSClassFromString("XCTestCase")` to skip CloudKit in test mode
 - Analytics streak loop bounded to 3,650 iterations
 - Photo size validated against 10MB limit before storage
+- Lambda strips userId/sk from client data to prevent IDOR partition key overwrite
+- Lambda validates request body before JSON.parse
+- Sync error logs use localizedDescription only (no credential leakage)
+- DynamoDB batch writes retry unprocessed items with exponential backoff
+- Items per sync request capped at 100
