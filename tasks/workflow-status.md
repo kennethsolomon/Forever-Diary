@@ -15,7 +15,7 @@
 | 8 | /debug | skipped | user skipped |
 | 9 | /security-check | done | clean on attempt 2 |
 | 10 | /commit | done | db083d2 fix(security) |
-| 11 | /review | >> next << | attempt 1: 2 critical, 3 warning, 4 nitpick |
-| 12 | /commit | not yet | conditional |
-| 13 | /finish-feature | not yet | |
-| 14 | /release | not yet | optional |
+| 11 | /review | done | clean on attempt 3 |
+| 12 | /commit | skipped | review was clean, no new changes |
+| 13 | /finish-feature | done | branch created, changelog + arch log committed, 58/58 tests pass, no remote |
+| 14 | /release | >> next << | optional |
