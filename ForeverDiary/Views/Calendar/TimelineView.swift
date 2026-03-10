@@ -130,6 +130,17 @@ struct DaySummarySheet: View {
         components.year = currentYear
         let date = Calendar.current.date(from: components) ?? .now
 
+        // Remove any pending tombstone for the same (monthDayKey, year) to avoid
+        // duplicate DynamoDB PutItem requests for the same sk in pushPending.
+        let key = monthDayKey
+        let yr = currentYear
+        let tombstoneDescriptor = FetchDescriptor<DiaryEntry>(
+            predicate: #Predicate { $0.monthDayKey == key && $0.year == yr }
+        )
+        if let tombstone = try? modelContext.fetch(tombstoneDescriptor).first {
+            modelContext.delete(tombstone)
+        }
+
         let newEntry = DiaryEntry(
             monthDayKey: monthDayKey,
             year: currentYear,

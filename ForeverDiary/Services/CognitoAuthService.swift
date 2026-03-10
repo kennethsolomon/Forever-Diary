@@ -59,7 +59,6 @@ final class CognitoAuthService {
 
     /// Sign in with email and password. Obtains Cognito credentials on success.
     func signIn(email: String, password: String) async throws {
-        identityId = nil
         let body: [String: Any] = [
             "AuthFlow": "USER_PASSWORD_AUTH",
             "AuthParameters": [
@@ -122,7 +121,6 @@ final class CognitoAuthService {
 
     /// Sign in with a Google ID token. Federates via Cognito Identity Pool.
     func signInWithGoogle(idToken: String, email: String?) async throws {
-        identityId = nil
         let logins = ["accounts.google.com": idToken]
         let id = try await getOrCreateIdentity(logins: logins)
         let creds = try await getCredentials(identityId: id, logins: logins)

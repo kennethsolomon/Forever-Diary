@@ -56,14 +56,17 @@ final class SyncService {
         entry.deletedAt = .now
         entry.updatedAt = .now
         entry.syncStatus = SyncStatus.pending
+        var saveSucceeded = false
         do {
             try context.save()
+            saveSucceeded = true
         } catch {
             print("[SyncService] Soft-delete save failed: \(error.localizedDescription)")
         }
 
-        // Best-effort: immediately delete child records from remote
-        guard !childDeleteItems.isEmpty else { return }
+        // Best-effort: immediately delete child records from remote.
+        // Skip if save failed — children are still in local store; deleting them remotely would orphan them.
+        guard saveSucceeded, !childDeleteItems.isEmpty else { return }
         do {
             try await authService.refreshIfNeeded()
             let batchSize = 25
@@ -156,7 +159,7 @@ final class SyncService {
         let pendingTemplates = try context.fetch(FetchDescriptor<CheckInTemplate>(predicate: templatePredicate))
 
         var items: [[String: Any]] = []
-        var tombstoneEntries: [DiaryEntry] = []
+        var tombstoneCount = 0
 
         for entry in pendingEntries {
             if let deletedAt = entry.deletedAt {
@@ -172,7 +175,7 @@ final class SyncService {
                     ],
                     "updatedAt": deletedAtStr
                 ])
-                tombstoneEntries.append(entry)
+                tombstoneCount += 1
             } else {
                 let entryData: [String: Any] = [
                     "monthDayKey": entry.monthDayKey,
@@ -250,7 +253,7 @@ final class SyncService {
         }
 
         try context.save()
-        print("[SyncService] Pushed \(items.count) items (\(tombstoneEntries.count) tombstone(s))")
+        print("[SyncService] Pushed \(items.count) items (\(tombstoneCount) tombstone(s))")
     }
 
     /// Pull remote changes since last sync.

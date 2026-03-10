@@ -57,7 +57,9 @@ final class GoogleAuthService: NSObject {
             session.presentationContextProvider = self
             session.prefersEphemeralWebBrowserSession = false
             webAuthSession = session
-            session.start()
+            if !session.start() {
+                continuation.resume(throwing: GoogleAuthError.sessionFailed)
+            }
         }
 
         return try await exchangeCode(code: code, codeVerifier: codeVerifier, redirectURI: redirectURI)
@@ -132,7 +134,7 @@ final class GoogleAuthService: NSObject {
     }
 
     enum GoogleAuthError: Error, LocalizedError {
-        case invalidURL, cancelled, invalidCallback, tokenExchangeFailed
+        case invalidURL, cancelled, invalidCallback, tokenExchangeFailed, sessionFailed
 
         var errorDescription: String? {
             switch self {
@@ -140,6 +142,7 @@ final class GoogleAuthService: NSObject {
             case .cancelled: return nil
             case .invalidCallback: return "Invalid response from Google."
             case .tokenExchangeFailed: return "Failed to complete Google sign-in."
+            case .sessionFailed: return "Could not start Google sign-in session."
             }
         }
     }

@@ -320,6 +320,16 @@ struct EntryDetailView: View {
         components.year = year
         let date = Calendar.current.date(from: components) ?? .now
 
+        // Remove any pending tombstone before inserting to avoid duplicate sk in pushPending.
+        let key = monthDayKey
+        let yr = year
+        let tombstoneDescriptor = FetchDescriptor<DiaryEntry>(
+            predicate: #Predicate { $0.monthDayKey == key && $0.year == yr }
+        )
+        if let tombstone = try? modelContext.fetch(tombstoneDescriptor).first {
+            modelContext.delete(tombstone)
+        }
+
         let newEntry = DiaryEntry(
             monthDayKey: monthDayKey,
             year: year,
