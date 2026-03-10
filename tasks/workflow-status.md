@@ -18,4 +18,4 @@
 | 11 | /review | done | clean on attempt 2 (nitpicks fixed) |
 | 12 | /commit | done | 1a635a6 refactor, e6890e5 chore |
 | 13 | /finish-feature | done | PR #1 created, 69/69 tests, changelog updated |
-| 14 | /release | >> next << | optional |
+| 14 | /release | skipped | user skipped |
