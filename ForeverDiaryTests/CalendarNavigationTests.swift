@@ -16,6 +16,20 @@ final class CalendarNavigationTests: XCTestCase {
         return ModelContext(container)
     }
 
+    // MARK: - DayDestination
+
+    func testDayDestinationEquality() {
+        let a = DayDestination(monthDayKey: "03-10")
+        let b = DayDestination(monthDayKey: "03-10")
+        XCTAssertEqual(a, b)
+    }
+
+    func testDayDestinationInequality() {
+        let a = DayDestination(monthDayKey: "03-10")
+        let b = DayDestination(monthDayKey: "03-11")
+        XCTAssertNotEqual(a, b)
+    }
+
     // MARK: - EntryDestination
 
     func testEntryDestinationEquality() {
@@ -86,7 +100,7 @@ final class CalendarNavigationTests: XCTestCase {
         XCTAssertEqual(results.first?.diaryText, "")
     }
 
-    func testEagerEntryCreationDoesNotDuplicate() throws {
+    func testQueryFindsExistingEntryBeforeInsert() throws {
         let context = try makeContext()
 
         let monthDayKey = "03-10"

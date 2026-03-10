@@ -1,6 +1,10 @@
 import SwiftUI
 import SwiftData
 
+struct DayDestination: Hashable {
+    let monthDayKey: String
+}
+
 struct EntryDestination: Hashable {
     let monthDayKey: String
     let year: Int
@@ -26,8 +30,8 @@ struct CalendarBrowserView: View {
             .background(Color("backgroundPrimary"))
             .navigationTitle("Calendar")
             .navigationBarTitleDisplayMode(.large)
-            .navigationDestination(for: String.self) { key in
-                DayTimelineView(monthDayKey: key, navigationPath: $navigationPath)
+            .navigationDestination(for: DayDestination.self) { dest in
+                DayTimelineView(monthDayKey: dest.monthDayKey, navigationPath: $navigationPath)
             }
             .navigationDestination(for: EntryDestination.self) { dest in
                 EntryDetailView(monthDayKey: dest.monthDayKey, year: dest.year)
@@ -107,7 +111,7 @@ struct MonthPageView: View {
                     let isToday = month == todayMonth && day == todayDay
 
                     Button {
-                        navigationPath.append(key)
+                        navigationPath.append(DayDestination(monthDayKey: key))
                     } label: {
                         DayRow(day: day, yearCount: yearEntries.count, isToday: isToday)
                     }
