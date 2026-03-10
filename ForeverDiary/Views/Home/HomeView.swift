@@ -303,7 +303,7 @@ struct MarkdownTextView: View {
                 .font(.system(.body, design: .serif))
                 .foregroundStyle(Color("textSecondary").opacity(0.6))
         } else {
-            Text(renderedMarkdown)
+            Text(Self.parseMarkdown(text))
                 .font(.system(.body, design: .serif))
                 .foregroundStyle(Color("textPrimary"))
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -311,7 +311,7 @@ struct MarkdownTextView: View {
         }
     }
 
-    private var renderedMarkdown: AttributedString {
+    static func parseMarkdown(_ text: String) -> AttributedString {
         let processed = text.split(separator: "\n", omittingEmptySubsequences: false)
             .map { line -> String in
                 let trimmed = line.trimmingCharacters(in: .whitespaces)

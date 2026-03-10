@@ -9,9 +9,9 @@
 | 2 | /frontend-design | done | calendar grid, theme system, view/write mode — full spec |
 | 3 | /write-plan | done | 4 phases, 24 steps, approved |
 | 4 | /execute-plan | done | 4 phases complete, 69/69 tests pass, BUILD SUCCEEDED |
-| 5 | /commit | >> next << | |
-| 6 | /write-tests | not yet | |
-| 7 | /commit | not yet | conditional |
+| 5 | /commit | done | 4 commits: theme, calendar, editor, tasks |
+| 6 | /write-tests | done | 20 new tests (7 theme, 13 markdown), 89/89 pass |
+| 7 | /commit | >> next << | conditional |
 | 8 | /debug | not yet | optional |
 | 9 | /security-check | not yet | loop |
 | 10 | /commit | not yet | conditional |
