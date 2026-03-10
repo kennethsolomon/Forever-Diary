@@ -6,6 +6,7 @@ struct SettingsView: View {
     @Environment(SyncService.self) private var syncService
     @Query(sort: \CheckInTemplate.sortOrder) private var templates: [CheckInTemplate]
 
+    @AppStorage("appTheme") private var appTheme: String = AppTheme.system.rawValue
     @State private var showAddTemplate = false
     @State private var templateToEdit: CheckInTemplate?
     @State private var templateToDelete: CheckInTemplate?
@@ -14,6 +15,7 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
+                appearanceSection
                 habitTemplatesSection
                 syncSection
                 aboutSection
@@ -49,6 +51,21 @@ struct SettingsView: View {
             } message: {
                 Text("This won't delete existing check-in data, but the template will no longer appear on new entries.")
             }
+        }
+    }
+
+    // MARK: - Appearance
+
+    private var appearanceSection: some View {
+        Section {
+            Picker("Theme", selection: $appTheme) {
+                ForEach(AppTheme.allCases, id: \.rawValue) { theme in
+                    Text(theme.rawValue).tag(theme.rawValue)
+                }
+            }
+            .pickerStyle(.segmented)
+        } header: {
+            Text("Appearance")
         }
     }
 
