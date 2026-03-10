@@ -1,16 +1,6 @@
 import SwiftUI
 import SwiftData
 
-struct EntryDestination: Hashable {
-    let monthDayKey: String
-    let year: Int
-}
-
-struct DaySheetItem: Identifiable {
-    let id: String
-    var monthDayKey: String { id }
-}
-
 // MARK: - Calendar Browser
 
 struct CalendarBrowserView: View {
@@ -53,7 +43,7 @@ struct CalendarBrowserView: View {
             .sheet(item: $sheetItem, onDismiss: {
                 if let dest = pendingNavigation {
                     pendingNavigation = nil
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         navigationPath.append(dest)
                     }
                 }
@@ -106,7 +96,12 @@ struct MonthSection: View {
         return (weekday - Calendar.current.firstWeekday + 7) % 7
     }
 
+    private var entriesByDay: [String: [DiaryEntry]] {
+        Dictionary(grouping: entries, by: \.monthDayKey)
+    }
+
     var body: some View {
+        let grouped = entriesByDay
         VStack(spacing: 12) {
             Text(Calendar.current.monthSymbols[month - 1])
                 .font(.system(.title, design: .rounded, weight: .bold))
@@ -121,7 +116,7 @@ struct MonthSection: View {
 
                 ForEach(1...daysInMonth, id: \.self) { day in
                     let key = String(format: "%02d-%02d", month, day)
-                    let dayEntries = entries.filter { $0.monthDayKey == key }
+                    let dayEntries = grouped[key] ?? []
                     let allPhotos = dayEntries.flatMap { $0.safePhotoAssets }
                     let thumbnails = Array(allPhotos.prefix(4).map { $0.thumbnailData })
                     let isToday = month == todayMonth && day == todayDay

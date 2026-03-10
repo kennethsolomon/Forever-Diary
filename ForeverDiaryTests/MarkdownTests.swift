@@ -104,4 +104,16 @@ final class MarkdownTests: XCTestCase {
         let plain = String(result.characters)
         XCTAssertEqual(plain, "This is bold italic text")
     }
+
+    // MARK: - Numbered lists (pass through unmodified)
+
+    func testNumberedListNotConvertedToBullets() {
+        let input = "1. First\n2. Second\n3. Third"
+        let result = MarkdownTextView.parseMarkdown(input)
+        let plain = String(result.characters)
+        XCTAssertFalse(plain.contains("\u{2022}"))
+        XCTAssertTrue(plain.contains("First"))
+        XCTAssertTrue(plain.contains("Second"))
+        XCTAssertTrue(plain.contains("Third"))
+    }
 }
