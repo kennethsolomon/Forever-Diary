@@ -106,7 +106,11 @@ struct DaySummarySheet: View {
                 Button("Delete", role: .destructive) {
                     if let entryToDelete {
                         modelContext.delete(entryToDelete)
-                        try? modelContext.save()
+                        do {
+                            try modelContext.save()
+                        } catch {
+                            print("[ForeverDiary] Delete failed: \(error.localizedDescription)")
+                        }
                     }
                 }
                 Button("Cancel", role: .cancel) {}
