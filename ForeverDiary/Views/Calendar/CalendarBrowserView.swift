@@ -1,17 +1,23 @@
 import SwiftUI
 import SwiftData
 
+struct EntryDestination: Hashable {
+    let monthDayKey: String
+    let year: Int
+}
+
 struct CalendarBrowserView: View {
     @State private var selectedMonth: Int = Calendar.current.component(.month, from: .now)
+    @State private var navigationPath = NavigationPath()
 
     private let months = Calendar.current.monthSymbols
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             VStack(spacing: 0) {
                 TabView(selection: $selectedMonth) {
                     ForEach(1...12, id: \.self) { month in
-                        MonthPageView(month: month)
+                        MonthPageView(month: month, navigationPath: $navigationPath)
                             .tag(month)
                     }
                 }
@@ -20,6 +26,12 @@ struct CalendarBrowserView: View {
             .background(Color("backgroundPrimary"))
             .navigationTitle("Calendar")
             .navigationBarTitleDisplayMode(.large)
+            .navigationDestination(for: String.self) { key in
+                DayTimelineView(monthDayKey: key, navigationPath: $navigationPath)
+            }
+            .navigationDestination(for: EntryDestination.self) { dest in
+                EntryDetailView(monthDayKey: dest.monthDayKey, year: dest.year)
+            }
             .safeAreaInset(edge: .top) {
                 monthSelector
                     .padding(.horizontal, 20)
@@ -63,11 +75,13 @@ struct CalendarBrowserView: View {
 
 struct MonthPageView: View {
     let month: Int
+    @Binding var navigationPath: NavigationPath
 
     @Query private var entries: [DiaryEntry]
 
-    init(month: Int) {
+    init(month: Int, navigationPath: Binding<NavigationPath>) {
         self.month = month
+        self._navigationPath = navigationPath
         let prefix = String(format: "%02d-", month)
         _entries = Query(filter: #Predicate<DiaryEntry> { $0.monthDayKey.starts(with: prefix) })
     }
@@ -92,8 +106,8 @@ struct MonthPageView: View {
                     let yearEntries = entries.filter { $0.monthDayKey == key }
                     let isToday = month == todayMonth && day == todayDay
 
-                    NavigationLink {
-                        TimelineView(monthDayKey: key)
+                    Button {
+                        navigationPath.append(key)
                     } label: {
                         DayRow(day: day, yearCount: yearEntries.count, isToday: isToday)
                     }
