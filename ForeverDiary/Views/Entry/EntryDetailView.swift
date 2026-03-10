@@ -391,7 +391,7 @@ struct EntryDetailView: View {
             modelContext.insert(value)
         }
         e.updatedAt = .now
-        e.syncStatus = "pending"
+        e.syncStatus = SyncStatus.pending
         try? modelContext.save()
         syncService.scheduleDebouncedSync()
     }
