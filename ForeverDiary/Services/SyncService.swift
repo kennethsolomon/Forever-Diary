@@ -261,8 +261,8 @@ final class SyncService {
     @MainActor
     func downloadPhotos() async throws {
         let context = ModelContext(container)
-        let predicate = #Predicate<PhotoAsset> { $0.s3Key != nil && $0.imageData.isEmpty }
-        let missingPhotos = try context.fetch(FetchDescriptor<PhotoAsset>(predicate: predicate))
+        let predicate = #Predicate<PhotoAsset> { $0.s3Key != nil }
+        let missingPhotos = try context.fetch(FetchDescriptor<PhotoAsset>(predicate: predicate)).filter { $0.imageData.isEmpty }
 
         for photo in missingPhotos {
             guard let photoKey = photo.s3Key else { continue }

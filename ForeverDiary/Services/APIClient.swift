@@ -118,17 +118,33 @@ final class APIClient {
 
     // MARK: - AWS SigV4 Signing
 
+    // SigV4 unreserved characters — everything else must be percent-encoded
+    private static let sigV4Unreserved: CharacterSet = {
+        var cs = CharacterSet()
+        cs.insert(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~")
+        return cs
+    }()
+
+    private static let amzDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
+
+    private static let dateStampFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyyMMdd"
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
+
     private func signRequest(_ request: inout URLRequest, credentials: CognitoAuthService.AWSCredentials) throws {
         let now = Date()
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
-        dateFormatter.timeZone = TimeZone(identifier: "UTC")
-        let amzDate = dateFormatter.string(from: now)
-
-        let shortDateFormatter = DateFormatter()
-        shortDateFormatter.dateFormat = "yyyyMMdd"
-        shortDateFormatter.timeZone = TimeZone(identifier: "UTC")
-        let dateStamp = shortDateFormatter.string(from: now)
+        let amzDate = Self.amzDateFormatter.string(from: now)
+        let dateStamp = Self.dateStampFormatter.string(from: now)
 
         let service = "execute-api"
         let region = AWSConfig.region
@@ -144,15 +160,18 @@ final class APIClient {
 
         let method = request.httpMethod ?? "GET"
         let path = url.path.isEmpty ? "/" : url.path
-        let query = url.query ?? ""
 
-        // Canonical query string (sorted)
+        // Canonical query string: re-encode with SigV4 rules (only A-Za-z0-9-_.~ unencoded)
         let canonicalQueryString: String
-        if query.isEmpty {
-            canonicalQueryString = ""
+        if let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems, !items.isEmpty {
+            let encoded = items.map { item in
+                let name = item.name.addingPercentEncoding(withAllowedCharacters: Self.sigV4Unreserved) ?? item.name
+                let value = (item.value ?? "").addingPercentEncoding(withAllowedCharacters: Self.sigV4Unreserved) ?? ""
+                return "\(name)=\(value)"
+            }
+            canonicalQueryString = encoded.sorted().joined(separator: "&")
         } else {
-            let pairs = query.components(separatedBy: "&").sorted()
-            canonicalQueryString = pairs.joined(separator: "&")
+            canonicalQueryString = ""
         }
 
         let bodyData = request.httpBody ?? Data()
@@ -178,7 +197,6 @@ final class APIClient {
             path,
             canonicalQueryString,
             canonicalHeaders,
-            "",
             signedHeaders,
             bodyHash
         ].joined(separator: "\n")
