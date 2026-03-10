@@ -46,7 +46,7 @@ final class SyncService {
             saveLastSyncDate(lastSyncDate!)
         } catch {
             lastError = error.localizedDescription
-            print("[SyncService] syncAll error: \(error)")
+            print("[SyncService] syncAll error: \(error.localizedDescription)")
         }
 
         isSyncing = false

@@ -10,10 +10,10 @@
 | 3 | /write-plan | done | 5 phases, ~30 steps, all-AWS offline-first sync |
 | 4 | /execute-plan | done | all 5 phases complete, BUILD SUCCEEDED, 31/31 tests pass |
 | 5 | /commit | done | 9a695bd feat(sync), ed818b6 chore gitignore |
-| 6 | /write-tests | >> next << | |
-| 7 | /commit | not yet | conditional |
-| 8 | /debug | not yet | optional |
-| 9 | /security-check | not yet | |
+| 6 | /write-tests | done | 27 new tests, 58/58 pass |
+| 7 | /commit | done | 2e42fec test(sync) |
+| 8 | /debug | skipped | user skipped |
+| 9 | /security-check | >> next << | |
 | 10 | /commit | not yet | conditional |
 | 11 | /review | not yet | loop until 0 issues |
 | 12 | /commit | not yet | conditional |

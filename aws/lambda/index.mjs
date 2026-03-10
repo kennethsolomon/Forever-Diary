@@ -8,6 +8,7 @@ const s3 = new S3Client({ region: "ap-southeast-1" });
 
 const TABLE = "forever-diary";
 const BUCKET = "forever-diary-photos-800759";
+const MAX_ITEMS_PER_REQUEST = 100;
 
 export const handler = async (event) => {
   const path = event.resource || event.path;
@@ -21,12 +22,18 @@ export const handler = async (event) => {
 
   try {
     if (path === "/sync" && method === "POST") {
+      if (!event.body) {
+        return respond(400, { error: "Request body required" });
+      }
       return await handleSyncPush(userId, JSON.parse(event.body));
     }
     if (path === "/sync" && method === "GET") {
       return await handleSyncPull(userId, event.queryStringParameters);
     }
     if (path === "/presign" && method === "POST") {
+      if (!event.body) {
+        return respond(400, { error: "Request body required" });
+      }
       return await handlePresign(userId, JSON.parse(event.body));
     }
     return respond(404, { error: "Not found" });
@@ -43,6 +50,10 @@ async function handleSyncPush(userId, body) {
     return respond(400, { error: "items array required" });
   }
 
+  if (items.length > MAX_ITEMS_PER_REQUEST) {
+    return respond(400, { error: `Maximum ${MAX_ITEMS_PER_REQUEST} items per request` });
+  }
+
   // Limit batch size to 25 (DynamoDB limit)
   const batches = [];
   for (let i = 0; i < items.length; i += 25) {
@@ -51,16 +62,20 @@ async function handleSyncPush(userId, body) {
 
   let written = 0;
   for (const batch of batches) {
-    const requests = batch.map((item) => ({
-      PutRequest: {
-        Item: marshall({
-          userId,
-          sk: item.sk,
-          ...item.data,
-          updatedAt: item.updatedAt || new Date().toISOString(),
-        }),
-      },
-    }));
+    const requests = batch.map((item) => {
+      // Strip reserved keys from item.data to prevent partition key overwrite
+      const { userId: _, sk: __, ...safeData } = item.data || {};
+      return {
+        PutRequest: {
+          Item: marshall({
+            userId,
+            sk: item.sk,
+            ...safeData,
+            updatedAt: item.updatedAt || new Date().toISOString(),
+          }),
+        },
+      };
+    });
 
     await dynamo.send(
       new BatchWriteItemCommand({
@@ -140,7 +155,6 @@ function respond(statusCode, body) {
     statusCode,
     headers: {
       "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*",
     },
     body: JSON.stringify(body),
   };

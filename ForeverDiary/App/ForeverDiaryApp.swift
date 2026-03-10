@@ -50,6 +50,8 @@ struct ForeverDiaryApp: App {
         container = resolvedContainer
         TemplateSeedService.seedDefaultTemplatesIfNeeded(context: container.mainContext)
 
+        // Services are created in all modes (needed for @Environment in views).
+        // Init has no network side effects; startSync() guards against test mode.
         let auth = CognitoAuthService()
         let api = APIClient(authService: auth)
         authService = auth

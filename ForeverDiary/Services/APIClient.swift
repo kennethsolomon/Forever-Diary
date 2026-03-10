@@ -158,17 +158,26 @@ final class APIClient {
         let bodyData = request.httpBody ?? Data()
         let bodyHash = Data(SHA256.hash(data: bodyData)).hexString
 
-        let signedHeaders = "content-type;host;x-amz-date;x-amz-security-token"
-        let contentType = request.value(forHTTPHeaderField: "Content-Type") ?? ""
+        let contentType = request.value(forHTTPHeaderField: "Content-Type")
+        let hasContentType = contentType != nil && !contentType!.isEmpty
+
+        let signedHeaders = hasContentType
+            ? "content-type;host;x-amz-date;x-amz-security-token"
+            : "host;x-amz-date;x-amz-security-token"
+
+        var canonicalHeaders = ""
+        if hasContentType {
+            canonicalHeaders += "content-type:\(contentType!)\n"
+        }
+        canonicalHeaders += "host:\(host)\n"
+        canonicalHeaders += "x-amz-date:\(amzDate)\n"
+        canonicalHeaders += "x-amz-security-token:\(credentials.sessionToken)\n"
 
         let canonicalRequest = [
             method,
             path,
             canonicalQueryString,
-            "content-type:\(contentType)\n",
-            "host:\(host)\n",
-            "x-amz-date:\(amzDate)\n",
-            "x-amz-security-token:\(credentials.sessionToken)\n",
+            canonicalHeaders,
             "",
             signedHeaders,
             bodyHash
