@@ -8,6 +8,8 @@ final class CheckInTemplate {
     var type: CheckInFieldType = CheckInFieldType.text
     var isActive: Bool = true
     var sortOrder: Int = 0
+    var syncStatus: String = "pending"
+    var lastSyncedAt: Date?
 
     init(
         id: UUID = UUID(),

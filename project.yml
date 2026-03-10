@@ -41,11 +41,7 @@ targets:
         CODE_SIGN_ENTITLEMENTS: ForeverDiary/ForeverDiary.entitlements
     entitlements:
       path: ForeverDiary/ForeverDiary.entitlements
-      properties:
-        com.apple.developer.icloud-container-identifiers:
-          - "iCloud.com.foreverdiary.app"
-        com.apple.developer.icloud-services:
-          - CloudKit
+      properties: {}
 
   ForeverDiaryTests:
     type: bundle.unit-test

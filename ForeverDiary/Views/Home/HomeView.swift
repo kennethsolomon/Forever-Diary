@@ -3,6 +3,7 @@ import SwiftData
 
 struct HomeView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(SyncService.self) private var syncService
     @FocusState private var isTextEditorFocused: Bool
     @State private var diaryText = ""
     @State private var showSavedIndicator = false
@@ -10,6 +11,7 @@ struct HomeView: View {
     @State private var entry: DiaryEntry?
     @State private var showLocationEditor = false
     @State private var showPhotoPicker = false
+    @State private var syncDebounceTask: Task<Void, Never>?
 
     private let today = Date.now
     private var todayKey: String { DiaryEntry.monthDayKey(from: today) }
@@ -62,6 +64,12 @@ struct HomeView: View {
             }
 
             Spacer()
+
+            Image(systemName: syncService.isSyncing ? "arrow.triangle.2.circlepath.icloud" : (syncService.lastError != nil ? "exclamationmark.icloud" : "checkmark.icloud"))
+                .font(.system(.body))
+                .foregroundStyle(syncService.lastError != nil ? .red : Color("textSecondary"))
+                .opacity(syncService.isSyncing ? 0.5 : 1.0)
+                .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: syncService.isSyncing)
 
             if showSavedIndicator {
                 Text("Saved")
@@ -184,6 +192,7 @@ struct HomeView: View {
         if let entry {
             entry.diaryText = text
             entry.updatedAt = .now
+            entry.syncStatus = "pending"
         } else {
             let newEntry = DiaryEntry(
                 monthDayKey: todayKey,
@@ -209,8 +218,18 @@ struct HomeView: View {
                     }
                 }
             }
+            triggerDebouncedSync()
         } catch {
             print("[ForeverDiary] Home save failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func triggerDebouncedSync() {
+        syncDebounceTask?.cancel()
+        syncDebounceTask = Task {
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            await syncService.syncAll()
         }
     }
 }

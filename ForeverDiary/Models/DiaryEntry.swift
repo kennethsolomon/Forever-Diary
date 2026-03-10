@@ -11,6 +11,8 @@ final class DiaryEntry {
     var locationText: String?
     var createdAt: Date = Date.now
     var updatedAt: Date = Date.now
+    var syncStatus: String = "pending"
+    var lastSyncedAt: Date?
 
     @Relationship(deleteRule: .cascade, inverse: \CheckInValue.entry)
     var checkInValues: [CheckInValue]? = []

@@ -5,16 +5,16 @@
 
 | # | Step | Status | Notes |
 |---|------|--------|-------|
-| 1 | /brainstorm | done | design approved — monolith, iOS 17+, cool & minimal, infinity+calendar logo |
-| 2 | /frontend-design | done | "Quiet Ink" — write-first home, inline habits, month carousel, New York serif |
-| 3 | /write-plan | done | 11 phases, ~50 steps, 4 risks mitigated with explicit fallbacks |
-| 4 | /execute-plan | done | all 11 phases implemented, BUILD SUCCEEDED, 2 minor fixes (Tab→tabItem, simulator name) |
-| 5 | /commit | done | 9bb9a0e — feat: implement Forever Diary v1 (53 files) |
-| 6 | /write-tests | done | 30 tests, 4 files, all pass; fixed 3 real bugs (CloudKit unique constraints, test host crash, mainContext conflict) |
-| 7 | /commit | done | 0debb1e — fix + tests combined |
-| 8 | /debug | skipped | user skipped — no known bugs |
-| 9 | /security-check | done | clean on attempt 2 — all 6 findings fixed |
-| 10 | /commit | >> next << | conditional |
+| 1 | /brainstorm | done | all-AWS: DynamoDB + S3 + Cognito + Lambda, offline-first SwiftData sync |
+| 2 | /frontend-design | skipped | backend-only feature, no UI changes |
+| 3 | /write-plan | done | 5 phases, ~30 steps, all-AWS offline-first sync |
+| 4 | /execute-plan | >> next << | |
+| 5 | /commit | not yet | |
+| 6 | /write-tests | not yet | |
+| 7 | /commit | not yet | conditional |
+| 8 | /debug | not yet | optional |
+| 9 | /security-check | not yet | |
+| 10 | /commit | not yet | conditional |
 | 11 | /review | not yet | loop until 0 issues |
 | 12 | /commit | not yet | conditional |
 | 13 | /finish-feature | not yet | |

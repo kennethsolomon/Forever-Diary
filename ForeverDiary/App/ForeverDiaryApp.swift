@@ -4,6 +4,8 @@ import SwiftData
 @main
 struct ForeverDiaryApp: App {
     let container: ModelContainer
+    let authService: CognitoAuthService
+    let syncService: SyncService
 
     init() {
         let schema = Schema([
@@ -14,53 +16,67 @@ struct ForeverDiaryApp: App {
         ])
 
         let isTestHost = NSClassFromString("XCTestCase") != nil
+        let resolvedContainer: ModelContainer
 
         if isTestHost {
-            // Use in-memory, local-only storage when running as test host
             let config = ModelConfiguration(
                 isStoredInMemoryOnly: true,
                 cloudKitDatabase: .none
             )
             do {
-                container = try ModelContainer(for: schema, configurations: config)
+                resolvedContainer = try ModelContainer(for: schema, configurations: config)
             } catch {
                 fatalError("Test ModelContainer failed: \(error.localizedDescription)")
             }
         } else {
-            // Try CloudKit first, fall back to local-only if unavailable
-            let cloudConfig = ModelConfiguration(
-                "ForeverDiary",
-                schema: schema,
-                cloudKitDatabase: .automatic
-            )
             let localConfig = ModelConfiguration(
                 "ForeverDiary",
                 schema: schema,
                 cloudKitDatabase: .none
             )
 
-            if let cloudContainer = try? ModelContainer(for: schema, configurations: cloudConfig) {
-                container = cloudContainer
-            } else if let localContainer = try? ModelContainer(for: schema, configurations: localConfig) {
-                container = localContainer
+            if let localContainer = try? ModelContainer(for: schema, configurations: localConfig) {
+                resolvedContainer = localContainer
             } else {
-                // Last resort: try in-memory to avoid permanent crash loop
                 let memoryConfig = ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
                 if let memoryContainer = try? ModelContainer(for: schema, configurations: memoryConfig) {
-                    container = memoryContainer
+                    resolvedContainer = memoryContainer
                 } else {
                     fatalError("Failed to create any ModelContainer")
                 }
             }
         }
 
+        container = resolvedContainer
         TemplateSeedService.seedDefaultTemplatesIfNeeded(context: container.mainContext)
+
+        let auth = CognitoAuthService()
+        let api = APIClient(authService: auth)
+        authService = auth
+        syncService = SyncService(apiClient: api, authService: auth, container: resolvedContainer)
     }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environment(syncService)
+                .task {
+                    await startSync()
+                }
         }
         .modelContainer(container)
+    }
+
+    private func startSync() async {
+        let isTestHost = NSClassFromString("XCTestCase") != nil
+        guard !isTestHost else { return }
+
+        do {
+            _ = try await authService.authenticate()
+            try? await Task.sleep(for: .seconds(2))
+            await syncService.syncAll()
+        } catch {
+            print("[ForeverDiary] Auth/sync init failed: \(error.localizedDescription)")
+        }
     }
 }

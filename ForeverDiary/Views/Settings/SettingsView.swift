@@ -3,6 +3,7 @@ import SwiftData
 
 struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(SyncService.self) private var syncService
     @Query(sort: \CheckInTemplate.sortOrder) private var templates: [CheckInTemplate]
 
     @State private var showAddTemplate = false
@@ -102,13 +103,53 @@ struct SettingsView: View {
     private var syncSection: some View {
         Section {
             HStack {
-                Label("iCloud Sync", systemImage: "icloud")
+                Label("Cloud Sync", systemImage: "cloud")
                     .font(.system(.body, design: .rounded))
                 Spacer()
-                Text("Automatic")
-                    .font(.system(.subheadline, design: .rounded))
-                    .foregroundStyle(Color("textSecondary"))
+                if syncService.isSyncing {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Text("Active")
+                        .font(.system(.subheadline, design: .rounded))
+                        .foregroundStyle(Color("textSecondary"))
+                }
             }
+
+            if let lastSync = syncService.lastSyncDate {
+                HStack {
+                    Text("Last Synced")
+                        .font(.system(.body, design: .rounded))
+                    Spacer()
+                    Text(lastSync, style: .relative)
+                        .font(.system(.subheadline, design: .rounded))
+                        .foregroundStyle(Color("textSecondary"))
+                    Text("ago")
+                        .font(.system(.subheadline, design: .rounded))
+                        .foregroundStyle(Color("textSecondary"))
+                }
+            }
+
+            if let error = syncService.lastError {
+                Text(error)
+                    .font(.system(.caption, design: .rounded))
+                    .foregroundStyle(.red)
+            }
+
+            Button {
+                Task { await syncService.syncAll() }
+            } label: {
+                HStack {
+                    Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
+                        .font(.system(.body, design: .rounded))
+                    Spacer()
+                    if syncService.isSyncing {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+            }
+            .disabled(syncService.isSyncing)
         } header: {
             Text("Sync")
         }

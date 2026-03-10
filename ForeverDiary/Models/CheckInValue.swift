@@ -9,6 +9,9 @@ final class CheckInValue {
     var numberValue: Double?
     var templateId: UUID = UUID()
 
+    var syncStatus: String = "pending"
+    var lastSyncedAt: Date?
+
     var entry: DiaryEntry?
 
     init(

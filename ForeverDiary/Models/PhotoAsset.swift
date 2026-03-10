@@ -12,6 +12,10 @@ final class PhotoAsset {
     var thumbnailData: Data = Data()
 
     var createdAt: Date = Date.now
+    var syncStatus: String = "pending"
+    var lastSyncedAt: Date?
+    var s3Key: String?
+    var s3ThumbKey: String?
 
     var entry: DiaryEntry?
 

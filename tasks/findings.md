@@ -1,127 +1,77 @@
-# Forever Diary v1 — Design Findings
+# Forever Diary — Cloud Sync Feature Findings
 
 ## Problem Statement
-Build an iPhone-first personal journaling app centered on a yearless calendar concept. Users browse Month -> Day and see a reverse-chronological stack of entries for that same date across years. The app should optimize for the fastest possible "write today" flow while preserving the reflective timeline view.
+App data is lost on reinstall. User reinstalls weekly on personal device with a free Apple Developer account (no CloudKit). Need cloud persistence for diary entries and photos.
 
 ## Key Decisions
 
-### Architecture
-- **Single-package monolith** (Approach A) — one Xcode target, organized folders. Refactor into modules only if/when scale demands it.
-- **iOS 17+** deployment target for full SwiftData support.
-- **SwiftUI + SwiftData + CloudKit auto-sync** via `NSPersistentCloudKitContainer`.
+### Backend: All-AWS
+- **DynamoDB** for structured data (entries, check-ins, templates)
+- **S3** for photo storage (JPEG blobs)
+- **Cognito** for anonymous device-based auth (no login screen)
+- **API Gateway + Lambda** for presigned S3 URLs and sync API
+- Rationale: single ecosystem, user has existing AWS account, 25GB DynamoDB free forever, ~$0.50/month after year 1
 
-### Data Models
-- **DiaryEntry** — unique on `(monthDayKey, year)`. Owns freeform text, optional location, relationships to `CheckInValue` and `PhotoAsset`.
-- **CheckInTemplate** — global reusable definitions (boolean, text, number). Managed in Settings.
-- **CheckInValue** — per-entry values linking back to a template and entry.
-- **PhotoAsset** — stores `imageData` + `thumbnailData` directly in SwiftData (app sandbox). JPEG 0.7 quality.
+### Architecture: Offline-first with background sync
+```
+SwiftUI Views
+    ↓ @Query
+SwiftData (local, offline-first, source of truth for UI)
+    ↓ SyncService (background)
+Cognito (identity) → API Gateway → Lambda → DynamoDB + S3
+```
 
-### Navigation
-- 4-tab `TabView`: Home, Analytics, Calendar, Settings.
-- `NavigationStack` per tab.
-- EntryDetail is a shared screen with segmented control: Diary | Habit | Images.
-- Calendar flow: Month grid -> Day grid -> Timeline (year cards, newest first).
+### Sync Strategy
+- SwiftData remains the local source of truth — all reads come from SwiftData
+- SyncService runs in background: pushes local changes to AWS, pulls remote changes on app launch / reinstall
+- Conflict resolution: last-write-wins based on `updatedAt` timestamp
+- Photos: upload to S3 via presigned URL, store S3 key in DynamoDB and SwiftData
+- On reinstall: Cognito restores identity → pull DynamoDB entries → lazy-download photos from S3
 
-### Photos
-- **App sandbox storage** — photos copied into app, synced via CloudKit assets.
-- Thumbnails generated at 300px for list views.
-- `PhotosPicker` for library, `UIImagePickerController` for camera.
+### Data Flow
+- **Write path:** User edits → SwiftData save → mark dirty → SyncService uploads to DynamoDB/S3
+- **Read path (normal):** SwiftData @Query (no network)
+- **Read path (restore):** Cognito auth → DynamoDB scan → insert into SwiftData → S3 photo download (lazy)
 
-### Sync
-- **SwiftData CloudKit auto-sync** — all reads/writes local, Apple handles merge/push.
-- Fully offline capable.
+### DynamoDB Schema
+- **Table: diary-entries** — PK: `userId`, SK: `{monthDayKey}#{year}` — stores text, location, weekday, timestamps
+- **Table: check-in-values** — PK: `userId`, SK: `{entryKey}#{templateId}` — stores bool/text/number values
+- **Table: check-in-templates** — PK: `userId`, SK: `{templateId}` — stores label, type, isActive, sortOrder
+- **Table: photo-assets** — PK: `userId`, SK: `{entryKey}#{photoId}` — stores S3 key, createdAt
 
-### Location
-- Auto-detect on entry creation via `CLLocationManager` + reverse geocode.
-- Graceful fallback if permission denied — `locationText` stays nil, user can type manually.
+### S3 Structure
+- Bucket: `forever-diary-photos`
+- Key pattern: `{userId}/{monthDayKey}-{year}/{photoId}.jpg`
+- Thumbnails: `{userId}/{monthDayKey}-{year}/{photoId}_thumb.jpg`
 
-### Default Habit Templates (first launch seed)
-- Mood (text)
-- Gratitude (text)
-- Weight (number)
-- Exercise (boolean)
-- Sleep (number)
+### Auth
+- Cognito Identity Pool with unauthenticated access (anonymous)
+- Device gets a stable `identityId` — used as `userId` partition key
+- Future: add Apple Sign-In as an authenticated provider for cross-device sync
 
-### Analytics
-- Computed at read time via `@Query` + in-memory aggregation. No separate snapshot model.
-- Week/Month/Year views for: entry completion rate, streaks, habit completion %, trend lines.
-- Built with Swift Charts.
+### SwiftData Changes
+- Add `syncStatus` field to models: `.synced`, `.pending`, `.conflict`
+- Add `lastSyncedAt` timestamp
+- SyncService queries for `.pending` items and uploads them
 
-### Visual Design
-- **Cool & minimal** palette: slate blue (#4A6FA5), soft gray (#8E9AAF), near-white bg (#F8F9FA).
-- SF Pro typography with Dynamic Type.
-- Cards with 12pt rounded corners, light shadows.
-- SF Symbols for tab icons.
+### Lambda Functions
+- `generatePresignedUrl` — returns S3 upload/download URL for photos
+- `syncEntries` — batch upsert/fetch entries from DynamoDB
+- Optional: could use API Gateway direct DynamoDB integration to skip Lambda for simple CRUD
 
-### Logo
-- **Infinity + calendar** concept: continuous infinity loop in slate blue, one loop incorporates subtle calendar grid.
-- SVG source, exported to AppIcon asset catalog.
-- Clean single-weight stroke, works at all icon sizes.
+### Security Constraints
+- No AWS credentials in the app — all access via Cognito temporary credentials
+- S3 bucket policy: users can only read/write their own `{userId}/` prefix
+- DynamoDB: partition key = `userId`, enforced by IAM policy on Cognito role
+- Presigned URLs expire after 15 minutes
 
 ## Chosen Approach & Rationale
-Single-package monolith is the right call for a focused, personal diary app. It minimizes setup overhead, avoids premature abstraction, and lets SwiftData + CloudKit work with zero module-boundary friction. The app is intentionally niche — a diary, not a platform — so simplicity is a feature.
-
-## Frontend Design (approved 2026-03-10)
-
-### UX Changes from Brainstorming
-1. **Write-first Home** — Home IS the writing surface, not a dashboard. Open app → cursor ready.
-2. **Single scrollable entry** — text → habits → photos on one page. No segmented tabs.
-3. **Horizontal month carousel** — swipe L/R for months instead of 3x4 grid.
-4. **New York serif for diary text** — journal-like feel, distinct from rest of UI.
-
-### Aesthetic: "Quiet Ink"
-Cool slate tones, generous whitespace, serif diary text. Interface recedes so writing feels intimate.
-
-### Color Palette
-- Background: #F8F9FA (backgroundPrimary)
-- Surface: #FFFFFF (surfaceCard)
-- Text Primary: #2B2D42 (textPrimary)
-- Text Secondary: #8E9AAF (textSecondary)
-- Accent Blue: #4A6FA5 (accentSlate)
-- Accent Bright: #5B8DEF (accentBright)
-- Border: #E8ECF0 (borderSubtle)
-- Habit Complete: #6BBF8A (habitComplete)
-- Destructive: #E85D5D (destructive)
-- Dark mode: #1A1B2E bg, #242538 surface, keep accent blue
-
-### Typography
-- Date header: SF Pro Rounded 28pt Semibold
-- Year label: SF Pro Rounded 20pt Medium
-- Diary text: New York (SF Serif) 17pt Regular
-- Check-in labels: SF Pro Text 15pt Regular
-- Tab bar: SF Pro Text 10pt Medium
-- Caption: SF Pro Text 13pt Regular
-
-### Key Components
-- WriteView (Home): date header + full text editor + compact action bar (location, photos, habits)
-- EntryDetail (from Calendar): scrollable — text → collapsible check-ins → photo grid
-- MonthCarousel: TabView .page style, 12 pages, swipe horizontal
-- DayRow: day number + dot indicators (dots = years with entries)
-- YearCard: rounded 12pt card with year, weekday, location, 2-line preview, badges
-- TimelineView: ScrollView of YearCards + optional Add Entry button
-- PhotoGrid: LazyVGrid 3-col thumbnails
-
-### Motion
-- Year cards: staggered fade-in (0.05s delay per card)
-- Check-in collapse: spring(response: 0.3, dampingFraction: 0.8)
-- Photo add: scale + opacity transition
-- Auto-save: subtle "Saved" text fade near date header
-
-### Implementation Notes
-- @FocusState for auto-focus text editor on Home
-- .font(.serif) for New York on iOS 17+
-- @Attribute(.externalStorage) on photo Data fields
-- JPEG 0.7 compression, 300px thumbnails
+All-AWS with offline-first SwiftData. Single ecosystem, generous free tier (25GB DynamoDB forever, ~$0.50/month for S3 after year 1). SwiftData stays as local cache — no UI changes needed. SyncService is a new background layer that pushes/pulls data.
 
 ## Open Questions
-- None at this time. All v1 decisions are resolved.
+- None — direction is locked in.
 
-## Out of Scope for v1
-- iPad/Mac support
-- Reminders/notifications
-- Export/import
-- Video/file attachments
-- AI/sentiment analysis
-- Android
-- Multi-user/social features
-- Monthly template overrides
+## Out of Scope
+- Real-time collaborative sync (single user app)
+- Cross-device conflict resolution UI (last-write-wins is sufficient)
+- Photo editing/cropping in cloud
