@@ -5,17 +5,17 @@
 
 | # | Step | Status | Notes |
 |---|------|--------|-------|
-| 1 | /brainstorm | done | calendar nav freeze: NavigationLink inside paged TabView conflict |
-| 2 | /frontend-design | skipped | bug fix, no UI changes |
-| 3 | /write-plan | done | 2 phases, 2 files, approved |
-| 4 | /execute-plan | done | 2 files changed, BUILD SUCCEEDED, 58/58 tests pass |
-| 5 | /commit | done | 0b616c4 fix(calendar), c5a2543 chore(tasks) |
-| 6 | /write-tests | done | 9 new tests, 67/67 pass |
-| 7 | /commit | done | 70f6f58 test(calendar), c642e59 chore(tasks) |
-| 8 | /debug | skipped | user skipped |
-| 9 | /security-check | done | clean on attempt 1 |
-| 10 | /commit | done | 08d9421 chore(tasks) |
-| 11 | /review | done | clean on attempt 2 (nitpicks fixed) |
-| 12 | /commit | done | 1a635a6 refactor, e6890e5 chore |
-| 13 | /finish-feature | done | PR #1 created, 69/69 tests, changelog updated |
-| 14 | /release | skipped | user skipped |
+| 1 | /brainstorm | done | 3 features: calendar grid, theme system, view/write mode |
+| 2 | /frontend-design | done | calendar grid, theme system, view/write mode — full spec |
+| 3 | /write-plan | done | 4 phases, 24 steps, approved |
+| 4 | /execute-plan | done | 4 phases complete, 69/69 tests pass, BUILD SUCCEEDED |
+| 5 | /commit | >> next << | |
+| 6 | /write-tests | not yet | |
+| 7 | /commit | not yet | conditional |
+| 8 | /debug | not yet | optional |
+| 9 | /security-check | not yet | loop |
+| 10 | /commit | not yet | conditional |
+| 11 | /review | not yet | loop |
+| 12 | /commit | not yet | conditional |
+| 13 | /finish-feature | not yet | |
+| 14 | /release | not yet | optional |
