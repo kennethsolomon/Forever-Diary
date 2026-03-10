@@ -14,8 +14,8 @@
 | 7 | /commit | done | test(tests): add theme and markdown parsing tests |
 | 8 | /debug | skipped | user skipped |
 | 9 | /security-check | done | clean — 0 critical/high/medium, 2 low (informational) |
-| 10 | /commit | >> next << | conditional |
-| 11 | /review | not yet | loop |
-| 12 | /commit | not yet | conditional |
-| 13 | /finish-feature | not yet | |
+| 10 | /commit | done | security fixes + review fixes |
+| 11 | /review | done | clean on attempt 2 (2 warnings + 3 nitpicks fixed) |
+| 12 | /commit | done | refactor: address review findings |
+| 13 | /finish-feature | >> next << | |
 | 14 | /release | not yet | optional |
