@@ -91,13 +91,16 @@ final class SyncService {
 
         // Delete locally first
         context.delete(photo)
+        var saveSucceeded = false
         do {
             try context.save()
+            saveSucceeded = true
         } catch {
             print("[SyncService] Local photo delete failed: \(error.localizedDescription)")
         }
 
-        // Best-effort remote cleanup
+        // Best-effort remote cleanup — skip if save failed to avoid orphaning the remote record
+        guard saveSucceeded else { return }
         do {
             try await authService.refreshIfNeeded()
             var body: [String: Any] = [

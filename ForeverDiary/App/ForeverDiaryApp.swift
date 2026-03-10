@@ -69,11 +69,6 @@ struct ForeverDiaryApp: App {
                 SignInView()
                     .environment(cognitoAuth)
                     .environment(googleAuth)
-                    .onChange(of: cognitoAuth.isAuthenticated) { _, authenticated in
-                        if authenticated {
-                            Task { await startSync() }
-                        }
-                    }
             }
         }
         .modelContainer(container)

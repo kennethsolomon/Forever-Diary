@@ -29,6 +29,7 @@ struct PhotoGalleryView: View {
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             .onChange(of: currentIndex) { _, _ in
+                lastScale = 1.0
                 withAnimation(.spring(response: 0.3)) { scale = 1.0 }
             }
 
