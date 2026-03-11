@@ -9,6 +9,9 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ## [Unreleased]
 
 ### Added
+- Lightweight sync change-check: `GET /sync?check=true&since=<ts>` returns `{ hasChanges, serverTime }` without fetching item data — periodic sync now polls cheaply before doing a full pull
+- "Updated from another device" toast on iOS and macOS — appears when `pullRemote()` applies remote entry changes, auto-dismisses after 3 seconds
+- 11 new XCTest cases covering change-check guard clauses, toast trigger/dismiss/retrigger, LWW return values, and periodic sync lifecycle (now 122 total)
 - `NetworkMonitor` service (NWPathMonitor) — tracks live reachability on iOS and macOS; exposes `isConnected: Bool` via `@Observable`
 - Offline state UI: Settings/Sync section shows "Offline" badge and disables "Sync Now" button when disconnected (iOS + macOS)
 - macOS `SyncStatusView` shows `wifi.slash` icon with "Offline" label when device is unreachable

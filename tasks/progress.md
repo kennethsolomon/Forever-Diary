@@ -1,5 +1,28 @@
 # Progress Log
 
+## Session: 2026-03-11 — Lightweight Sync Check + Remote Update Toast
+
+### Work Log
+- Added `handleChangeCheck()` to Lambda `index.mjs` — `GET /sync?check=true&since=<ts>` returns `{ hasChanges, serverTime }` with `Limit: 1` + `Select: COUNT`
+- Added `checkForChanges()` method to SyncService — lightweight HTTP check, falls back to `true` on failure
+- Added `showRemoteUpdateToast` observable property + `triggerRemoteUpdateToast()` auto-dismiss helper (3s)
+- Added `toastDismissTask` for cancellable auto-dismiss
+- Changed `upsertEntry()` to return `Bool` indicating whether a remote change was applied
+- Updated `pullRemote()` to count applied entry changes and trigger toast when > 0
+- Updated `startPeriodicSync()` to call `checkForChanges()` first, only runs `syncAll()` if changes exist
+- Added `import SwiftUI` to SyncService for `withAnimation`
+- Added `remoteUpdateToast` view to iOS HomeView — overlay between divider and text editor
+- Added `remoteUpdateToast` view to macOS EntryEditorView — between header and location field
+- iOS BUILD SUCCEEDED, macOS BUILD SUCCEEDED, 111/111 tests pass
+
+### Files Modified
+- aws/lambda/index.mjs (handleChangeCheck function)
+- ForeverDiary/Services/SyncService.swift (checkForChanges, toast state, upsertEntry return, periodic sync)
+- ForeverDiary/Views/Home/HomeView.swift (toast overlay)
+- ForeverDiaryMac/Views/Editor/EntryEditorView.swift (toast view)
+
+---
+
 ## Session: 2026-03-11 — Sync Race Condition Fix
 
 ### Work Log

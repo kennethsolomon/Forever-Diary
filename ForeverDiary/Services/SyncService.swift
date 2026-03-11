@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import SwiftUI
 
 enum SyncStatus {
     static let pending = "pending"
@@ -11,6 +12,7 @@ final class SyncService {
     private(set) var isSyncing = false
     private(set) var lastSyncDate: Date?
     private(set) var lastError: String?
+    private(set) var showRemoteUpdateToast = false
 
     private let apiClient: APIClient
     private let authService: CognitoAuthService
@@ -20,6 +22,7 @@ final class SyncService {
     private let lastSyncKey = "lastSyncTimestamp"
     private var syncDebounceTask: Task<Void, Never>?
     private var periodicTask: Task<Void, Never>?
+    private var toastDismissTask: Task<Void, Never>?
 
     private static let isoFormatter: ISO8601DateFormatter = {
         ISO8601DateFormatter()
@@ -130,14 +133,53 @@ final class SyncService {
         }
     }
 
-    /// Start polling every `interval` seconds. Call from app foreground; stop when backgrounded.
+    /// Lightweight check: asks the server if any changes exist since last sync, without fetching item data.
+    func checkForChanges() async -> Bool {
+        guard networkMonitor.isConnected, authService.isAuthenticated else { return false }
+        do {
+            try await authService.refreshIfNeeded()
+            var queryItems: [URLQueryItem] = [URLQueryItem(name: "check", value: "true")]
+            if let lastSync = loadLastSyncDate() {
+                let buffered = lastSync.addingTimeInterval(-120)
+                queryItems.append(URLQueryItem(name: "since", value: Self.isoFormatter.string(from: buffered)))
+            }
+            let result = try await apiClient.get(path: "/sync", queryItems: queryItems)
+            return (result["hasChanges"] as? Bool) ?? false
+        } catch {
+            // If the check fails (e.g. Lambda not yet redeployed), assume changes exist
+            return true
+        }
+    }
+
+    /// Show the remote update toast and auto-dismiss after 3 seconds.
+    @MainActor
+    func triggerRemoteUpdateToast() {
+        toastDismissTask?.cancel()
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+            showRemoteUpdateToast = true
+        }
+        toastDismissTask = Task {
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.3)) {
+                showRemoteUpdateToast = false
+            }
+        }
+    }
+
+    /// Start polling every `interval` seconds. Uses lightweight change-check first to avoid
+    /// full sync when no remote changes exist. Call from app foreground; stop when backgrounded.
     func startPeriodicSync(interval: TimeInterval = 15) {
         periodicTask?.cancel()
         periodicTask = Task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(interval))
                 guard !Task.isCancelled else { return }
-                await syncAll()
+                let hasChanges = await checkForChanges()
+                guard !Task.isCancelled else { return }
+                if hasChanges {
+                    await syncAll()
+                }
             }
         }
     }
@@ -430,11 +472,14 @@ final class SyncService {
             return orderA < orderB
         }
 
+        var appliedEntryChanges = 0
         for item in sorted {
             guard let sk = item["sk"] as? String else { continue }
 
             if sk.hasPrefix("entry#") {
-                try upsertEntry(item, sk: sk, context: context)
+                if try upsertEntry(item, sk: sk, context: context) {
+                    appliedEntryChanges += 1
+                }
             } else if sk.hasPrefix("template#") {
                 try upsertTemplate(item, context: context)
             } else if sk.hasPrefix("checkin#") {
@@ -445,7 +490,11 @@ final class SyncService {
         }
 
         try context.save()
-        print("[SyncService] Pulled \(remoteItems.count) items")
+        print("[SyncService] Pulled \(remoteItems.count) items (\(appliedEntryChanges) entry changes applied)")
+
+        if appliedEntryChanges > 0 {
+            triggerRemoteUpdateToast()
+        }
 
         // Prefer server-returned timestamp to avoid local clock skew
         return (result["serverTime"] as? String).flatMap { Self.isoFormatter.date(from: $0) }
@@ -555,12 +604,13 @@ final class SyncService {
 
     // MARK: - Private Helpers
 
+    /// Returns `true` if a remote change was actually applied to local data.
     @MainActor
-    private func upsertEntry(_ item: [String: Any], sk: String, context: ModelContext) throws {
+    private func upsertEntry(_ item: [String: Any], sk: String, context: ModelContext) throws -> Bool {
         let parts = sk.split(separator: "#")
         guard parts.count >= 3,
               let monthDayKey = parts.dropFirst().first.map(String.init),
-              let year = Int(parts.last ?? "") else { return }
+              let year = Int(parts.last ?? "") else { return false }
 
         let remoteUpdatedAt = (item["updatedAt"] as? String).flatMap { Self.isoFormatter.date(from: $0) } ?? Date.distantPast
         let predicate = #Predicate<DiaryEntry> { $0.monthDayKey == monthDayKey && $0.year == year }
@@ -574,15 +624,16 @@ final class SyncService {
            deletedAt >= remoteUpdatedAt {
             if let local = existing.first, deletedAt >= local.updatedAt {
                 context.delete(local) // cascade removes photos + check-ins
+                return true
             }
-            return
+            return false
         }
 
         if let local = existing.first {
             // Skip if local tombstone is newer than or equal to the remote update.
             // If remoteUpdatedAt > local.deletedAt, the remote is a re-create/re-edit that
             // wins LWW — clear the tombstone and apply the remote update below.
-            if let localDeletedAt = local.deletedAt, localDeletedAt >= remoteUpdatedAt { return }
+            if let localDeletedAt = local.deletedAt, localDeletedAt >= remoteUpdatedAt { return false }
             if remoteUpdatedAt > local.updatedAt {
                 local.deletedAt = nil
                 local.diaryText = item["diaryText"] as? String ?? local.diaryText
@@ -591,7 +642,9 @@ final class SyncService {
                 local.updatedAt = remoteUpdatedAt
                 local.syncStatus = SyncStatus.synced
                 local.lastSyncedAt = Date()
+                return true
             }
+            return false
         } else {
             let date = (item["date"] as? Double).map { Date(timeIntervalSince1970: $0) } ?? Date()
             let entry = DiaryEntry(
@@ -609,6 +662,7 @@ final class SyncService {
             }
             entry.updatedAt = remoteUpdatedAt
             context.insert(entry)
+            return true
         }
     }
 

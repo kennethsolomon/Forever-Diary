@@ -44,6 +44,11 @@ struct EntryEditorView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     headerSection
 
+                    if syncService.showRemoteUpdateToast {
+                        remoteUpdateToast
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+
                     // Location
                     HStack(spacing: 8) {
                         Image(systemName: "mappin")
@@ -348,6 +353,28 @@ struct EntryEditorView: View {
         .padding(.horizontal, 20)
         .padding(.vertical, 8)
         .background(Color("surfaceCard"))
+    }
+
+    // MARK: - Remote Update Toast
+
+    private var remoteUpdateToast: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(.system(.caption, weight: .medium))
+                .foregroundStyle(Color("accentBright"))
+                .symbolEffect(.pulse, options: .nonRepeating, isActive: syncService.showRemoteUpdateToast)
+            Text("Updated from another device")
+                .font(.system(.caption, design: .rounded, weight: .medium))
+                .foregroundStyle(Color("textSecondary"))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color("surfaceCard"))
+                .stroke(Color("borderSubtle"), lineWidth: 0.5)
+                .shadow(color: .black.opacity(0.06), radius: 6, y: 2)
+        )
     }
 
     // MARK: - Helpers
