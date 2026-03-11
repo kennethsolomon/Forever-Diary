@@ -18,6 +18,7 @@ final class SyncService {
 
     private let lastSyncKey = "lastSyncTimestamp"
     private var syncDebounceTask: Task<Void, Never>?
+    private var periodicTask: Task<Void, Never>?
 
     private static let isoFormatter: ISO8601DateFormatter = {
         ISO8601DateFormatter()
@@ -117,13 +118,136 @@ final class SyncService {
         }
     }
 
-    /// Schedule a sync after a 5-second debounce delay.
+    /// Schedule a sync after a 1-second debounce delay.
     func scheduleDebouncedSync() {
         syncDebounceTask?.cancel()
         syncDebounceTask = Task {
-            try? await Task.sleep(for: .seconds(5))
+            try? await Task.sleep(for: .seconds(1))
             guard !Task.isCancelled else { return }
             await syncAll()
+        }
+    }
+
+    /// Start polling every `interval` seconds. Call from app foreground; stop when backgrounded.
+    func startPeriodicSync(interval: TimeInterval = 15) {
+        periodicTask?.cancel()
+        periodicTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(interval))
+                guard !Task.isCancelled else { return }
+                await syncAll()
+            }
+        }
+    }
+
+    /// Stop the periodic sync timer (call when app goes to background).
+    func stopPeriodicSync() {
+        periodicTask?.cancel()
+        periodicTask = nil
+    }
+
+    /// Soft-delete a template so the tombstone propagates to other devices via pushPending.
+    @MainActor
+    func deleteTemplate(_ template: CheckInTemplate, context: ModelContext) async {
+        let now = Date.now
+        template.deletedAt = now
+        template.updatedAt = now
+        template.syncStatus = SyncStatus.pending
+        do {
+            try context.save()
+        } catch {
+            print("[SyncService] Template soft-delete save failed: \(error.localizedDescription)")
+            return
+        }
+        scheduleDebouncedSync()
+    }
+
+    /// Remove duplicate templates (same label + type) caused by multi-device seeding.
+    /// Keeps the one with the lowest sortOrder; deletes extras from DynamoDB then locally.
+    @MainActor
+    func deduplicateTemplates() async {
+        let context = ModelContext(container)
+        guard let all = try? context.fetch(FetchDescriptor<CheckInTemplate>(
+            sortBy: [SortDescriptor(\.sortOrder)]
+        )) else { return }
+
+        var seen: Set<String> = []
+        var toDelete: [CheckInTemplate] = []
+
+        for template in all {
+            // Skip templates already pending deletion
+            guard template.deletedAt == nil else { continue }
+            let key = "\(template.label.lowercased())|\(template.type.rawValue)"
+            if seen.contains(key) {
+                toDelete.append(template)
+            } else {
+                seen.insert(key)
+            }
+        }
+
+        guard !toDelete.isEmpty else { return }
+
+        // Soft-delete duplicates so other devices see the tombstone on their next pull
+        let now = Date.now
+        for template in toDelete {
+            template.deletedAt = now
+            template.updatedAt = now
+            template.syncStatus = SyncStatus.pending
+        }
+        try? context.save()
+
+        // Push tombstones now (don't wait for debounce)
+        do {
+            try await authService.refreshIfNeeded()
+            let tombstones: [[String: Any]] = toDelete.map { t in
+                let deletedAtStr = Self.isoFormatter.string(from: now)
+                return [
+                    "sk": "template#\(t.id.uuidString)",
+                    "data": ["id": t.id.uuidString, "deletedAt": deletedAtStr],
+                    "updatedAt": deletedAtStr
+                ]
+            }
+            let batchSize = 25
+            for i in stride(from: 0, to: tombstones.count, by: batchSize) {
+                let batch = Array(tombstones[i..<min(i + batchSize, tombstones.count)])
+                _ = try await apiClient.post(path: "/sync", body: ["items": batch])
+            }
+            // Hard-delete locally after successful push
+            for template in toDelete { context.delete(template) }
+            try? context.save()
+        } catch {
+            print("[SyncService] Dedup tombstone push failed: \(error.localizedDescription)")
+            // Templates stay soft-deleted locally; pushPending will retry
+        }
+        print("[SyncService] Removed \(toDelete.count) duplicate template(s)")
+    }
+
+    /// Remove duplicate CheckInValues — keeps the latest per (entry, templateId) pair.
+    /// Fixes inflated counts caused by UUID mismatches during cross-device sync.
+    func deduplicateCheckInValues() async {
+        let context = ModelContext(container)
+        guard let all = try? context.fetch(FetchDescriptor<CheckInValue>()) else { return }
+
+        // Group by (entry monthDayKey+year, templateId), keep latest updatedAt, delete the rest
+        var latestByKey: [String: CheckInValue] = [:]
+        for value in all {
+            let entryKey = "\(value.entry?.monthDayKey ?? "nil")|\(value.entry?.year ?? 0)"
+            let key = "\(entryKey)|\(value.templateId.uuidString)"
+            if let existing = latestByKey[key] {
+                if value.updatedAt > existing.updatedAt {
+                    context.delete(existing)
+                    latestByKey[key] = value
+                } else {
+                    context.delete(value)
+                }
+            } else {
+                latestByKey[key] = value
+            }
+        }
+        try? context.save()
+        let removed = all.count - latestByKey.count
+        if removed > 0 {
+            print("[SyncService] Removed \(removed) duplicate check-in value(s)")
         }
     }
 
@@ -136,10 +260,11 @@ final class SyncService {
         do {
             try await authService.refreshIfNeeded()
             try await pushPending()
-            try await pullRemote()
+            let serverTime = try await pullRemote()
             try await uploadPhotos()
             try await downloadPhotos()
-            lastSyncDate = Date()
+            // Use server-side timestamp to avoid clock-skew misses on next pull
+            lastSyncDate = serverTime ?? Date()
             saveLastSyncDate(lastSyncDate!)
         } catch {
             lastError = error.localizedDescription
@@ -207,25 +332,37 @@ final class SyncService {
                     items.append([
                         "sk": "checkin#\(entry.monthDayKey)#\(entry.year)#\(value.id.uuidString)",
                         "data": valueData,
-                        "updatedAt": Self.isoFormatter.string(from: entry.updatedAt)
+                        "updatedAt": Self.isoFormatter.string(from: value.updatedAt)
                     ])
                 }
             }
         }
 
+        var templateTombstoneCount = 0
         for template in pendingTemplates {
-            let templateData: [String: Any] = [
-                "id": template.id.uuidString,
-                "label": template.label,
-                "type": template.type.rawValue,
-                "isActive": template.isActive,
-                "sortOrder": template.sortOrder
-            ]
-            items.append([
-                "sk": "template#\(template.id.uuidString)",
-                "data": templateData,
-                "updatedAt": Self.isoFormatter.string(from: Date())
-            ])
+            if let deletedAt = template.deletedAt {
+                // Tombstone: propagate deletion to other devices
+                let deletedAtStr = Self.isoFormatter.string(from: deletedAt)
+                items.append([
+                    "sk": "template#\(template.id.uuidString)",
+                    "data": ["id": template.id.uuidString, "deletedAt": deletedAtStr],
+                    "updatedAt": deletedAtStr
+                ])
+                templateTombstoneCount += 1
+            } else {
+                let templateData: [String: Any] = [
+                    "id": template.id.uuidString,
+                    "label": template.label,
+                    "type": template.type.rawValue,
+                    "isActive": template.isActive,
+                    "sortOrder": template.sortOrder
+                ]
+                items.append([
+                    "sk": "template#\(template.id.uuidString)",
+                    "data": templateData,
+                    "updatedAt": Self.isoFormatter.string(from: template.updatedAt)
+                ])
+            }
         }
 
         guard !items.isEmpty else { return }
@@ -239,7 +376,6 @@ final class SyncService {
         let now = Date()
         for entry in pendingEntries {
             if entry.deletedAt != nil {
-                // Hard-delete tombstone after successful remote push
                 context.delete(entry)
             } else {
                 entry.syncStatus = SyncStatus.synced
@@ -251,26 +387,35 @@ final class SyncService {
             }
         }
         for template in pendingTemplates {
-            template.syncStatus = SyncStatus.synced
-            template.lastSyncedAt = now
+            if template.deletedAt != nil {
+                // Hard-delete after tombstone pushed successfully
+                context.delete(template)
+            } else {
+                template.syncStatus = SyncStatus.synced
+                template.lastSyncedAt = now
+            }
         }
 
         try context.save()
-        print("[SyncService] Pushed \(items.count) items (\(tombstoneCount) tombstone(s))")
+        print("[SyncService] Pushed \(items.count) items (\(tombstoneCount) entry tombstone(s), \(templateTombstoneCount) template tombstone(s))")
     }
 
-    /// Pull remote changes since last sync.
+    /// Pull remote changes since last sync. Returns the server-side timestamp for use as next `since`.
     @MainActor
-    func pullRemote() async throws {
+    @discardableResult
+    func pullRemote() async throws -> Date? {
         let context = ModelContext(container)
 
         var queryItems: [URLQueryItem] = []
         if let lastSync = loadLastSyncDate() {
-            queryItems.append(URLQueryItem(name: "since", value: Self.isoFormatter.string(from: lastSync)))
+            // Subtract 2 minutes to account for clock skew between devices and server.
+            // LWW checks on upsert prevent duplicate application of already-seen items.
+            let buffered = lastSync.addingTimeInterval(-120)
+            queryItems.append(URLQueryItem(name: "since", value: Self.isoFormatter.string(from: buffered)))
         }
 
         let result = try await apiClient.get(path: "/sync", queryItems: queryItems)
-        guard let remoteItems = result["items"] as? [[String: Any]] else { return }
+        guard let remoteItems = result["items"] as? [[String: Any]] else { return nil }
 
         // Process entries and templates first so check-ins and photos can find their parents
         let sorted = remoteItems.sorted { a, b in
@@ -297,6 +442,9 @@ final class SyncService {
 
         try context.save()
         print("[SyncService] Pulled \(remoteItems.count) items")
+
+        // Prefer server-returned timestamp to avoid local clock skew
+        return (result["serverTime"] as? String).flatMap { Self.isoFormatter.date(from: $0) }
     }
 
     /// Upload pending photos to S3 and push metadata to DynamoDB.
@@ -414,9 +562,12 @@ final class SyncService {
         let predicate = #Predicate<DiaryEntry> { $0.monthDayKey == monthDayKey && $0.year == year }
         let existing = try context.fetch(FetchDescriptor<DiaryEntry>(predicate: predicate))
 
-        // Handle tombstone: remote entry was deleted — apply if it's the latest write
+        // Handle tombstone: remote entry was deleted — only apply if deletedAt is the latest write.
+        // If deletedAt < remoteUpdatedAt the entry was re-created after deletion (stale tombstone marker);
+        // fall through to normal upsert so the re-created entry is restored locally.
         if let deletedAtStr = item["deletedAt"] as? String,
-           let deletedAt = Self.isoFormatter.date(from: deletedAtStr) {
+           let deletedAt = Self.isoFormatter.date(from: deletedAtStr),
+           deletedAt >= remoteUpdatedAt {
             if let local = existing.first, deletedAt >= local.updatedAt {
                 context.delete(local) // cascade removes photos + check-ins
             }
@@ -459,16 +610,32 @@ final class SyncService {
         guard let idString = item["id"] as? String,
               let id = UUID(uuidString: idString) else { return }
 
+        let remoteUpdatedAt = (item["updatedAt"] as? String).flatMap { Self.isoFormatter.date(from: $0) } ?? Date.distantPast
+
         let predicate = #Predicate<CheckInTemplate> { $0.id == id }
         let existing = try context.fetch(FetchDescriptor<CheckInTemplate>(predicate: predicate))
 
+        // Handle tombstone: template was deleted on another device
+        if let deletedAtStr = item["deletedAt"] as? String,
+           let deletedAt = Self.isoFormatter.date(from: deletedAtStr) {
+            if let local = existing.first, deletedAt >= local.updatedAt {
+                context.delete(local)
+            }
+            return
+        }
+
         if let local = existing.first {
+            // LWW: skip if local is newer or same age
+            guard remoteUpdatedAt > local.updatedAt else { return }
+            // Skip if local is a pending tombstone
+            if local.deletedAt != nil { return }
             local.label = item["label"] as? String ?? local.label
             if let typeRaw = item["type"] as? String, let type = CheckInFieldType(rawValue: typeRaw) {
                 local.type = type
             }
             local.isActive = item["isActive"] as? Bool ?? local.isActive
             local.sortOrder = item["sortOrder"] as? Int ?? local.sortOrder
+            local.updatedAt = remoteUpdatedAt
             local.syncStatus = SyncStatus.synced
             local.lastSyncedAt = Date()
         } else {
@@ -479,6 +646,7 @@ final class SyncService {
                 isActive: item["isActive"] as? Bool ?? true,
                 sortOrder: item["sortOrder"] as? Int ?? 0
             )
+            template.updatedAt = remoteUpdatedAt
             template.syncStatus = SyncStatus.synced
             template.lastSyncedAt = Date()
             context.insert(template)
@@ -487,7 +655,7 @@ final class SyncService {
 
     @MainActor
     private func upsertCheckInValue(_ item: [String: Any], sk: String, context: ModelContext) throws {
-        // Parse sk: "checkin#MM-DD#YYYY#UUID"
+        // Parse sk: "checkin#MM-DD#YYYY#VALUE_UUID"
         let parts = sk.split(separator: "#")
         guard parts.count >= 4,
               let monthDayKey = parts.dropFirst().first.map(String.init),
@@ -495,35 +663,54 @@ final class SyncService {
               let valueIdString = parts.last.map(String.init),
               let valueId = UUID(uuidString: valueIdString) else { return }
 
+        guard let templateId = (item["templateId"] as? String).flatMap(UUID.init) else { return }
+
+        let remoteUpdatedAt = (item["updatedAt"] as? String)
+            .flatMap { Self.isoFormatter.date(from: $0) } ?? Date.distantPast
+
         let entryPredicate = #Predicate<DiaryEntry> { $0.monthDayKey == monthDayKey && $0.year == year }
         guard let entry = try context.fetch(FetchDescriptor<DiaryEntry>(predicate: entryPredicate)).first else { return }
 
-        let existingPredicate = #Predicate<CheckInValue> { $0.id == valueId }
-        let existing = try context.fetch(FetchDescriptor<CheckInValue>(predicate: existingPredicate))
-
-        if let local = existing.first {
-            if let tidStr = item["templateId"] as? String, let tid = UUID(uuidString: tidStr) {
-                local.templateId = tid
-            }
+        // Primary lookup: find by value UUID (exact match from same device)
+        let byId = #Predicate<CheckInValue> { $0.id == valueId }
+        if let local = try context.fetch(FetchDescriptor<CheckInValue>(predicate: byId)).first {
+            guard remoteUpdatedAt > local.updatedAt else { return }
             if let b = item["boolValue"] as? Bool { local.boolValue = b }
             if let t = item["textValue"] as? String { local.textValue = t }
             if let n = item["numberValue"] as? Double { local.numberValue = n }
+            local.updatedAt = remoteUpdatedAt
             local.syncStatus = SyncStatus.synced
             local.lastSyncedAt = Date()
-        } else {
-            let templateId = (item["templateId"] as? String).flatMap(UUID.init) ?? UUID()
-            let value = CheckInValue(
-                id: valueId,
-                templateId: templateId,
-                boolValue: item["boolValue"] as? Bool,
-                textValue: item["textValue"] as? String,
-                numberValue: item["numberValue"] as? Double
-            )
-            value.entry = entry
-            value.syncStatus = SyncStatus.synced
-            value.lastSyncedAt = Date()
-            context.insert(value)
+            return
         }
+
+        // Secondary lookup: find by templateId + entry (handles UUID mismatch across devices)
+        let byTemplate = #Predicate<CheckInValue> { $0.templateId == templateId }
+        let candidatesByTemplate = try context.fetch(FetchDescriptor<CheckInValue>(predicate: byTemplate))
+        if let local = candidatesByTemplate.first(where: { $0.entry?.monthDayKey == monthDayKey && $0.entry?.year == year }) {
+            guard remoteUpdatedAt > local.updatedAt else { return }
+            if let b = item["boolValue"] as? Bool { local.boolValue = b }
+            if let t = item["textValue"] as? String { local.textValue = t }
+            if let n = item["numberValue"] as? Double { local.numberValue = n }
+            local.updatedAt = remoteUpdatedAt
+            local.syncStatus = SyncStatus.synced
+            local.lastSyncedAt = Date()
+            return
+        }
+
+        // Not found locally — insert as new record
+        let value = CheckInValue(
+            id: valueId,
+            templateId: templateId,
+            boolValue: item["boolValue"] as? Bool,
+            textValue: item["textValue"] as? String,
+            numberValue: item["numberValue"] as? Double
+        )
+        value.updatedAt = remoteUpdatedAt
+        value.entry = entry
+        value.syncStatus = SyncStatus.synced
+        value.lastSyncedAt = Date()
+        context.insert(value)
     }
 
     @MainActor

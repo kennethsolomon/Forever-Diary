@@ -8,6 +8,8 @@ struct ForeverDiaryApp: App {
     let googleAuth: GoogleAuthService
     let syncService: SyncService
 
+    @Environment(\.scenePhase) private var scenePhase
+
     init() {
         let schema = Schema([
             DiaryEntry.self,
@@ -49,7 +51,6 @@ struct ForeverDiaryApp: App {
         }
 
         container = resolvedContainer
-        TemplateSeedService.seedDefaultTemplatesIfNeeded(context: container.mainContext)
 
         let auth = CognitoAuthService()
         let api = APIClient(authService: auth)
@@ -72,6 +73,14 @@ struct ForeverDiaryApp: App {
             }
         }
         .modelContainer(container)
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                Task { await syncService.syncAll() }
+                syncService.startPeriodicSync()
+            } else if phase == .background {
+                syncService.stopPeriodicSync()
+            }
+        }
     }
 
     private func startSync() async {
@@ -80,5 +89,12 @@ struct ForeverDiaryApp: App {
 
         try? await Task.sleep(for: .seconds(2))
         await syncService.syncAll()
+
+        let seedCtx = ModelContext(container)
+        TemplateSeedService.seedDefaultTemplatesIfNeeded(context: seedCtx)
+        await syncService.deduplicateTemplates()
+        await syncService.deduplicateCheckInValues()
+
+        syncService.startPeriodicSync()
     }
 }

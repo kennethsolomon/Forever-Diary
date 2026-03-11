@@ -11,12 +11,16 @@ final class CognitoAuthService {
     private let keychainEmailKey = "cognitoUserEmail"
     private let keychainIdTokenKey = "cognitoIdToken"
     private let keychainRefreshKey = "cognitoRefreshToken"
+    private let keychainGoogleIdTokenKey = "googleIdToken"
+    private let keychainGoogleRefreshKey = "googleRefreshToken"
 
     private let identityEndpoint = "https://cognito-identity.\(AWSConfig.region).amazonaws.com"
     private let userPoolEndpoint = "https://cognito-idp.\(AWSConfig.region).amazonaws.com/"
 
     private var idToken: String?
     private var refreshToken: String?
+    private var googleIdToken: String?
+    private var googleRefreshToken: String?
 
     struct AWSCredentials {
         let accessKeyId: String
@@ -30,6 +34,8 @@ final class CognitoAuthService {
         userEmail = KeychainHelper.load(key: keychainEmailKey)
         idToken = KeychainHelper.load(key: keychainIdTokenKey)
         refreshToken = KeychainHelper.load(key: keychainRefreshKey)
+        googleIdToken = KeychainHelper.load(key: keychainGoogleIdTokenKey)
+        googleRefreshToken = KeychainHelper.load(key: keychainGoogleRefreshKey)
         if identityId != nil, userEmail != nil {
             isAuthenticated = true
         }
@@ -120,7 +126,7 @@ final class CognitoAuthService {
     }
 
     /// Sign in with a Google ID token. Federates via Cognito Identity Pool.
-    func signInWithGoogle(idToken: String, email: String?) async throws {
+    func signInWithGoogle(idToken: String, refreshToken: String?, email: String?) async throws {
         let logins = ["accounts.google.com": idToken]
         let id = try await getOrCreateIdentity(logins: logins)
         let creds = try await getCredentials(identityId: id, logins: logins)
@@ -128,10 +134,14 @@ final class CognitoAuthService {
         identityId = id
         credentials = creds
         userEmail = email
+        googleIdToken = idToken
+        googleRefreshToken = refreshToken
         isAuthenticated = true
 
         KeychainHelper.save(key: keychainIdentityKey, value: id)
         if let email { KeychainHelper.save(key: keychainEmailKey, value: email) }
+        KeychainHelper.save(key: keychainGoogleIdTokenKey, value: idToken)
+        if let refreshToken { KeychainHelper.save(key: keychainGoogleRefreshKey, value: refreshToken) }
     }
 
     /// Sign out: clear all credentials and Keychain state.
@@ -140,12 +150,16 @@ final class CognitoAuthService {
         credentials = nil
         idToken = nil
         refreshToken = nil
+        googleIdToken = nil
+        googleRefreshToken = nil
         userEmail = nil
         isAuthenticated = false
         KeychainHelper.delete(key: keychainIdentityKey)
         KeychainHelper.delete(key: keychainEmailKey)
         KeychainHelper.delete(key: keychainIdTokenKey)
         KeychainHelper.delete(key: keychainRefreshKey)
+        KeychainHelper.delete(key: keychainGoogleIdTokenKey)
+        KeychainHelper.delete(key: keychainGoogleRefreshKey)
     }
 
     /// Refresh AWS credentials if expired or about to expire (within 5 min).
@@ -153,6 +167,7 @@ final class CognitoAuthService {
         guard let id = identityId else { return }
         if let creds = credentials, creds.expiration.timeIntervalSinceNow > 300 { return }
 
+        // Cognito User Pool path: use refresh token to get new ID token
         if let rt = refreshToken {
             let body: [String: Any] = [
                 "AuthFlow": "REFRESH_TOKEN_AUTH",
@@ -174,10 +189,61 @@ final class CognitoAuthService {
             }
         }
 
+        // Google Sign-In path: use Google refresh token to get new Google ID token
+        if let googleRT = googleRefreshToken {
+            if let newGoogleIdToken = try? await refreshGoogleIdToken(refreshToken: googleRT) {
+                googleIdToken = newGoogleIdToken
+                KeychainHelper.save(key: keychainGoogleIdTokenKey, value: newGoogleIdToken)
+                let logins = ["accounts.google.com": newGoogleIdToken]
+                credentials = try await getCredentials(identityId: id, logins: logins)
+                return
+            }
+        }
+
+        // Last resort: try existing cached tokens
         if let token = idToken {
             let logins = userPoolLogins(idToken: token)
-            credentials = try await getCredentials(identityId: id, logins: logins)
+            if let creds = try? await getCredentials(identityId: id, logins: logins) {
+                credentials = creds
+                return
+            }
         }
+        if let token = googleIdToken {
+            let logins = ["accounts.google.com": token]
+            if let creds = try? await getCredentials(identityId: id, logins: logins) {
+                credentials = creds
+                return
+            }
+        }
+
+        // All refresh paths failed — sign out
+        signOut()
+    }
+
+    private func refreshGoogleIdToken(refreshToken: String) async throws -> String {
+        guard let url = URL(string: "https://oauth2.googleapis.com/token") else {
+            throw CognitoError.invalidURL
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 15
+
+        let params = [
+            "client_id=\(AWSConfig.googleClientId)",
+            "refresh_token=\(refreshToken)",
+            "grant_type=refresh_token"
+        ].joined(separator: "&")
+        request.httpBody = params.data(using: .utf8)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let newIdToken = json["id_token"] as? String else {
+            throw CognitoError.requestFailed
+        }
+        return newIdToken
     }
 
     // MARK: - Cognito Identity REST API
