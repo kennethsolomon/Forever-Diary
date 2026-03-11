@@ -86,11 +86,11 @@ final class CloudSyncServiceTests: XCTestCase {
     // MARK: - AWSConfig constants
 
     func testAWSConfigRegion() {
-        XCTAssertEqual(AWSConfig.region, "ap-southeast-1")
+        XCTAssertEqual(AWSConfig.region, "ap-southeast-2")
     }
 
     func testAWSConfigCognitoPoolIdHasRegionPrefix() {
-        XCTAssertTrue(AWSConfig.cognitoIdentityPoolId.hasPrefix("ap-southeast-1:"))
+        XCTAssertTrue(AWSConfig.cognitoIdentityPoolId.hasPrefix("ap-southeast-2:"))
     }
 
     func testAWSConfigAPIGatewayURLIsHTTPS() {
