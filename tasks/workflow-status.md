@@ -11,10 +11,10 @@
 | 4 | /execute-plan | done | all 8 steps complete; iOS + macOS BUILD SUCCEEDED; all tests pass |
 | 5 | /commit | done | fix(sync): prevent stale local data from overwriting remote on app open |
 | 6 | /write-tests | done | 11 new tests in SyncRaceConditionTests.swift; all pass, full suite green |
-| 7 | /commit | >> next << | conditional |
-| 8 | /debug | not yet | optional |
-| 9 | /security-check | not yet | loop |
-| 10 | /commit | not yet | conditional |
+| 7 | /commit | done | test(sync): add race condition guard tests |
+| 8 | /debug | skipped | no issues found during security-check |
+| 9 | /security-check | done | clean — 0 Critical, 0 High, 0 Medium, 0 Low |
+| 10 | /commit | >> next << | conditional — security was clean |
 | 11 | /review | not yet | loop |
 | 12 | /commit | not yet | conditional |
 | 13 | /finish-feature | not yet | |
