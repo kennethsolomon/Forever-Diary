@@ -9,6 +9,9 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ## [Unreleased]
 
 ### Added
+- `NetworkMonitor` service (NWPathMonitor) — tracks live reachability on iOS and macOS; exposes `isConnected: Bool` via `@Observable`
+- Offline state UI: Settings/Sync section shows "Offline" badge and disables "Sync Now" button when disconnected (iOS + macOS)
+- macOS `SyncStatusView` shows `wifi.slash` icon with "Offline" label when device is unreachable
 - macOS target: full iOS feature parity — colors, photos, analytics, settings CRUD, rich On This Day panel, 3-column layout
 - Server-side last-write-wins (LWW) sync via DynamoDB `UpdateItem` + `ConditionExpression` — rejects stale pushes without data loss
 - Template soft-delete tombstone: `deletedAt`/`updatedAt` fields on `CheckInTemplate` propagate deletions to all devices
@@ -51,6 +54,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - 90 unit tests (theme, markdown parsing, calendar navigation)
 
 ### Fixed
+- App no longer redirects to login when device has no internet — `refreshIfNeeded()` now returns silently instead of calling `signOut()` on network failure
+- `syncAll()` skips network operations immediately when offline instead of failing mid-sync
 - LWW tombstone race: locally-deleted entry now accepts a newer remote re-create instead of blocking it permanently
 - `@MainActor` isolation added to `deduplicateCheckInValues()` to match all other SwiftData context functions
 - Periodic sync and `syncAll` now guarded by `cognitoAuth.isAuthenticated` — prevents tasks accumulating during sign-in flow
