@@ -71,9 +71,22 @@ final class DiaryEntry {
         set { photoAssets = newValue }
     }
 
-    /// Habit completion count
+    /// Unique check-in template count (deduplicated — avoids inflated totals from sync duplicates)
+    var uniqueCheckInCount: Int {
+        Set(safeCheckInValues.map { $0.templateId }).count
+    }
+
+    /// Habit completion count (deduplicated by templateId — keeps latest per template)
     var completedCheckIns: Int {
-        safeCheckInValues.filter { value in
+        var latestByTemplate: [UUID: CheckInValue] = [:]
+        for value in safeCheckInValues {
+            if let existing = latestByTemplate[value.templateId] {
+                if value.updatedAt > existing.updatedAt { latestByTemplate[value.templateId] = value }
+            } else {
+                latestByTemplate[value.templateId] = value
+            }
+        }
+        return latestByTemplate.values.filter { value in
             if let b = value.boolValue { return b }
             if let t = value.textValue { return !t.isEmpty }
             if value.numberValue != nil { return true }
