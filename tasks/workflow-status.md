@@ -18,4 +18,4 @@
 | 11 | /review | done | clean on attempt 2 — all 3 warnings + 3 nitpicks resolved |
 | 12 | /commit | done | committed review fixes |
 | 13 | /finish-feature | done | PR #3 created — feat/macos-parity-and-lww-sync → main |
-| 14 | /release | >> next << | optional |
+| 14 | /release | skipped | user confirmed skip |
