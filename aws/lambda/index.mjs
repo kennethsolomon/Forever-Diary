@@ -146,6 +146,11 @@ async function handleSyncPush(userId, body) {
 
 // GET /sync — query items for user, optionally since a timestamp; returns server-side timestamp
 async function handleSyncPull(userId, params) {
+  // Lightweight change-check: returns only whether changes exist, no item data
+  if (params?.check === "true") {
+    return await handleChangeCheck(userId, params.since);
+  }
+
   const since = params?.since;
   let allItems = [];
   let lastKey = undefined;
@@ -174,6 +179,29 @@ async function handleSyncPull(userId, params) {
 
   const serverTime = new Date().toISOString();
   return respond(200, { items: allItems, count: allItems.length, serverTime });
+}
+
+// GET /sync?check=true — lightweight check for changes since a timestamp
+// Returns { hasChanges, serverTime } with no item data, using Limit: 1 to minimize read cost
+async function handleChangeCheck(userId, since) {
+  const serverTime = new Date().toISOString();
+
+  if (!since) {
+    // No since timestamp — assume changes exist (first sync or reset)
+    return respond(200, { hasChanges: true, serverTime });
+  }
+
+  const queryParams = {
+    TableName: TABLE,
+    KeyConditionExpression: "userId = :uid",
+    FilterExpression: "updatedAt > :since",
+    ExpressionAttributeValues: marshall({ ":uid": userId, ":since": since }),
+    Limit: 1,
+    Select: "COUNT",
+  };
+
+  const result = await dynamo.send(new QueryCommand(queryParams));
+  return respond(200, { hasChanges: (result.Count || 0) > 0, serverTime });
 }
 
 // POST /presign — generate S3 presigned URL for upload or download
