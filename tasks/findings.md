@@ -1,111 +1,30 @@
-# Forever Diary — UI Polish + Sign in with Apple
+# Forever Diary — macOS Full iOS Parity Rebuild
 
 ## Problem Statement
-Four improvements to the iOS app:
-1. Remove the view/write mode toggle (eye icon) from Home and EntryDetail — it's unwanted
-2. Photo viewer is broken (not centered, image cut off) — needs a full paginated gallery
-3. Calendar day cells (circles) don't match the aesthetic — needs photo cards with stacked deck effect
-4. No real accounts — users can't sign in, data is device-bound (anonymous Cognito)
-
-## Scope — Four Features
-
-### Feature A: Remove View/Write Mode Toggle
-**Goal:** Delete the eye icon and all related code.
-
-- Remove `isViewMode` state from `HomeView` and `EntryDetailView`
-- Remove toolbar `Button` (eye / square.and.pencil icon) from both views
-- Remove `MarkdownTextView` render branches from both `textEditor` and `diarySection`
-- Delete `MarkdownTextView.swift` (zero usages after removal)
-- Remove `MarkdownTests.swift` (only tests the deleted component)
-- Remove `isTextEditorFocused` toggle-on-mode-switch side effects in `HomeView`
-
-### Feature B: Full Paginated Photo Gallery Viewer
-**Goal:** Replace the broken fullscreen single-photo view with a proper swipe-through gallery.
-
-- Root cause: `ZStack(alignment: .topTrailing)` + `.ignoresSafeArea()` on image
-- New `PhotoGalleryView`: full-screen, black bg, swipe left/right through all entry photos
-- Entry point: tap any photo thumbnail → opens gallery at that photo's index
-- `X of N` counter at top (or pagination dots at bottom)
-- Pinch-to-zoom on current photo
-- Swipe down to dismiss (with velocity threshold)
-- Applies to: `EntryDetailView` (primary), and `YearSummaryCard` thumbnails (also tappable)
-- Improve `YearSummaryCard` photo thumbnails: larger tiles (64×64), not the current 40×40 strip
-
-### Feature C: Calendar Day Cards + Stacked Display
-**Goal:** Replace circular day cells with portrait-ratio photo cards; multi-entry/photo days show a stacked deck.
-
-- **Shape:** `RoundedRectangle` card, portrait aspect ratio ~3:4
-- **Single entry / no photo:** Plain card with day number, teal accent ring for today
-- **Single photo:** Card with photo background, day number overlaid in white
-- **2+ entries or photos:** Stacked deck using `ZStack`
-  - 2–3 background cards slightly offset (y +4–8px) and rotated (±2–4°)
-  - Top card shows the most recent/primary photo
-  - Small count badge (number of entries or total photos)
-- Remove all `Circle()` / `clipShape(Circle())` from `DayCell`
-- Keep `ScaleButtonStyle` press animation
-
-### Feature D: Sign in with Apple + Account System
-**Goal:** Replace anonymous Cognito with Apple-authenticated identity. Account required — no guest mode.
-
-**Auth flow:**
-1. App launch → check Keychain for authenticated session → if not found, show `SignInView`
-2. `SignInView`: centered "Sign in with Apple" button (ASAuthorizationAppleIDProvider)
-3. Apple returns `identityToken` (JWT) → pass to Cognito Identity Pool as Apple Login provider
-4. Cognito returns stable authenticated `identityId` (linked to Apple account, stable across devices)
-5. Store `identityId` + display name in Keychain
-6. App unlocks — proceed to main `ContentView`
-
-**Migration (anonymous → authenticated):**
-- Cognito Identity Linking: pass the stored anonymous `identityId` alongside the Apple token in `GetId`
-- Cognito merges anonymous → authenticated identity, returns the same IdentityId
-- All DynamoDB data (keyed by old IdentityId) remains intact — zero data movement needed
-- One-time migration on first sign-in; subsequent sign-ins skip this
-
-**New files:**
-- `ForeverDiary/Views/Auth/SignInView.swift` — Sign in with Apple screen
-- `ForeverDiary/Services/AppleAuthService.swift` — ASAuthorizationAppleIDProvider wrapper
-
-**Modified files:**
-- `ForeverDiary/Services/CognitoAuthService.swift` — add `authenticateWithApple(identityToken:)`, identity linking
-- `ForeverDiary/App/ForeverDiaryApp.swift` — auth gate: `SignInView` if not authenticated, else `ContentView`
-- `ForeverDiary/Views/Settings/SettingsView.swift` — Account section: show Apple display name, Sign Out button
+The macOS app was ~40% feature-complete. Missing: real analytics, photos, custom color palette, rich "On This Day" entry panel, full settings with habit CRUD, and photo gallery. The user wants full iOS feature parity adapted for a 3-column Mac desktop layout.
 
 ## Key Decisions
 
-1. **View mode removed entirely** — simplifies both views, no markdown render path
-2. **Full paginated gallery** — swipe between photos, pinch-to-zoom, swipe-down dismiss
-3. **Stacked card deck** — portrait cards, ZStack offset + slight rotation for multi-entry days
-4. **Cognito Identity Linking** — anonymous IdentityId upgraded to authenticated in-place; no Lambda migration needed
-5. **Account required** — no guest mode; Sign in with Apple mandatory on first launch
-6. **Apple identity token → Cognito** — use `appleid.apple.com` as the Cognito Identity Pool login provider key
+1. **Same 10 iOS colorsets** copied verbatim into `ForeverDiaryMac/Assets.xcassets/Colors/` — all views use `Color("name")`, no raw `NSColor.*`
+2. **3-column layout confirmed**:
+   - Column 1 (~170px): Compact month mini-calendar sidebar
+   - Column 2 (~300px): Rich "On This Day" year cards (text preview + photo thumbnails + check-in badge + location)
+   - Column 3 (remaining): Full entry editor — diary text + location + photos + check-ins
+3. **Photos**: `PhotosPicker` from `PhotosUI` (macOS 14+, same API as iOS) with `NSImage`-based compression pipeline (NSBitmapImageRep JPEG). Max 10 photos, 4096px resize, 0.85 quality, 300px thumbnail.
+4. **Photo gallery**: Dark `.sheet` presentation with `TabView(.page)`, pinch-zoom, X close button (no drag-to-dismiss on macOS).
+5. **Analytics**: Full port of iOS `AnalyticsView` — period picker, streak cards, completion gauge, per-habit progress bars. Opens as `.sheet` from sidebar Analytics button.
+6. **Settings**: 4-tab macOS settings window (⌘,): Account | Appearance | Habits | Sync. Habits tab has full CRUD with drag-to-reorder, delete, and edit sheet.
+7. **One pass**: All features implemented together, not incrementally.
 
-## Files Affected
+## Chosen Approach
+Port iOS features 1:1 adapted for Mac 3-column split view. Rewrite all macOS views; no iOS files touched.
 
-### Feature A (View Mode Removal)
-- `ForeverDiary/Views/Home/HomeView.swift`
-- `ForeverDiary/Views/Entry/EntryDetailView.swift`
-- `ForeverDiary/Views/Components/MarkdownTextView.swift` — delete
-- `ForeverDiaryTests/MarkdownTests.swift` — delete
-
-### Feature B (Photo Gallery)
-- `ForeverDiary/Views/Entry/EntryDetailView.swift` — replace `fullScreenCover` with gallery
-- `ForeverDiary/Views/Calendar/TimelineView.swift` — improve `YearSummaryCard` photo thumbnails
-- New: `ForeverDiary/Views/Components/PhotoGalleryView.swift`
-
-### Feature C (Calendar Cards)
-- `ForeverDiary/Views/Calendar/CalendarBrowserView.swift` — rewrite `DayCell`
-
-### Feature D (Auth)
-- `ForeverDiary/App/ForeverDiaryApp.swift`
-- `ForeverDiary/Services/CognitoAuthService.swift`
-- `ForeverDiary/Views/Settings/SettingsView.swift`
-- New: `ForeverDiary/Views/Auth/SignInView.swift`
-- New: `ForeverDiary/Services/AppleAuthService.swift`
-
-## Design Constraints (from lessons.md)
-- No `@Attribute(.unique)` in SwiftData models
-- Test containers must use `ModelContext(container)` not `container.mainContext`
-- Test host guard for CloudKit in ForeverDiaryApp (extend to skip auth services too)
+## Constraints (from lessons.md)
+- No `@Attribute(.unique)` on SwiftData models
+- macOS target uses local-only SwiftData (no CloudKit)
+- All colors via `Color("name")` asset catalog
+- `preferredColorScheme` applied at WindowGroup root from AppStorage
 
 ## Open Questions
-- None — direction is locked in.
+- Confirm `PhotosUI` framework is added to macOS target in `project.yml`
+- Confirm `SyncService.deleteTemplate()` soft-delete exists or needs adding

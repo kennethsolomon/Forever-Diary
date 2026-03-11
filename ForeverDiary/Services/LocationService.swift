@@ -28,18 +28,34 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
 
         let status = manager.authorizationStatus
         if status == .notDetermined {
+#if os(iOS)
             manager.requestWhenInUseAuthorization()
+#else
+            manager.requestAlwaysAuthorization()
+#endif
             // Wait for actual authorization callback instead of fixed sleep
             let newStatus = await withCheckedContinuation { continuation in
                 self.authContinuation = continuation
             }
+#if os(iOS)
             guard newStatus == .authorizedWhenInUse || newStatus == .authorizedAlways else {
                 return nil
             }
+#else
+            guard newStatus == .authorizedAlways else {
+                return nil
+            }
+#endif
         } else {
+#if os(iOS)
             guard status == .authorizedWhenInUse || status == .authorizedAlways else {
                 return nil
             }
+#else
+            guard status == .authorizedAlways else {
+                return nil
+            }
+#endif
         }
 
         return await withCheckedContinuation { continuation in

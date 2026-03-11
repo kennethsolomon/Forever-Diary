@@ -7,6 +7,7 @@ final class GoogleAuthService: NSObject {
 
     struct GoogleCredential {
         let idToken: String
+        let refreshToken: String?
         let email: String?
     }
 
@@ -96,8 +97,9 @@ final class GoogleAuthService: NSObject {
             throw GoogleAuthError.tokenExchangeFailed
         }
 
+        let refreshToken = json["refresh_token"] as? String
         let email = jwtClaim("email", from: idToken)
-        return GoogleCredential(idToken: idToken, email: email)
+        return GoogleCredential(idToken: idToken, refreshToken: refreshToken, email: email)
     }
 
     // MARK: - Helpers
@@ -150,9 +152,13 @@ final class GoogleAuthService: NSObject {
 
 extension GoogleAuthService: ASWebAuthenticationPresentationContextProviding {
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+#if os(iOS)
         UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .flatMap { $0.windows }
             .first { $0.isKeyWindow } ?? ASPresentationAnchor()
+#else
+        NSApp.keyWindow ?? ASPresentationAnchor()
+#endif
     }
 }

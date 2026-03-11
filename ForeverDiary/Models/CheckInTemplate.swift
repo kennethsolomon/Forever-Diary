@@ -10,6 +10,8 @@ final class CheckInTemplate {
     var sortOrder: Int = 0
     var syncStatus: String = "pending"
     var lastSyncedAt: Date?
+    var updatedAt: Date = Date.now
+    var deletedAt: Date? = nil
 
     init(
         id: UUID = UUID(),
@@ -23,5 +25,6 @@ final class CheckInTemplate {
         self.type = type
         self.isActive = isActive
         self.sortOrder = sortOrder
+        self.updatedAt = .now
     }
 }

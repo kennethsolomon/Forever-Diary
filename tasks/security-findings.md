@@ -386,6 +386,70 @@ _None found._
 
 ---
 
+# Security Audit — 2026-03-11 (macOS App — Full macOS Target)
+
+**Scope:** All ForeverDiaryMac source files (new macOS target) + new test file
+**Stack:** Swift / SwiftUI (macOS 14+) with SwiftData + AWS sync
+**Files audited:** 17 (ForeverDiaryMacApp.swift, SignInMacView.swift, EntryEditorView.swift, DayEntryListView.swift, MainWindowView.swift, MacImageHelper.swift, AnalyticsMacView.swift, SettingsMacView.swift, CalendarSidebarView.swift, MacPhotoGalleryView.swift, SyncStatusView.swift, EntryListView.swift, CheckInSectionView.swift, GoToTodayNotification.swift, AppTheme.swift, ForeverDiaryMac.entitlements, DiaryEntryDeduplicationTests.swift)
+
+## Critical (must fix before deploy)
+
+_None found._
+
+## High (fix before production)
+
+_None found._
+
+## Medium (should fix)
+
+_None found._
+
+## Low / Informational
+
+- **[ForeverDiaryMac/Views/Editor/EntryEditorView.swift:467]** `Data(contentsOf: url)` reads the full file into memory before size validation
+  **Standard:** CWE-400 — Uncontrolled Resource Consumption
+  **Risk:** `PhotoAsset.maxPhotoBytes` is checked after `MacImageHelper.compress()`, but the raw file is loaded entirely first. If a user selects a very large RAW image or video that happens to have an allowed extension (e.g., `.tiff`), the app allocates its full size in memory before compression can reduce it. On machines with limited RAM, this could cause memory pressure or an OOM crash.
+  **Recommendation:** Check file size before reading — `url.resourceValues(forKeys: [.fileSizeKey]).fileSize` — and skip files over a reasonable raw limit (e.g., 50 MB) before calling `Data(contentsOf:)`.
+
+- **[ForeverDiaryMac/ForeverDiaryMac.entitlements:9]** `files.user-selected.read-write` entitlement when only read access is required
+  **Standard:** OWASP A05 — Security Misconfiguration / Principle of Least Privilege
+  **Risk:** The app only reads user-selected files (photo import via NSOpenPanel). The `read-write` entitlement grants write access to any file the user selects via an Open/Save panel, including in future code paths. Read-only would be sufficient and reduces the blast radius of any future bug.
+  **Recommendation:** Change to `com.apple.security.files.user-selected.read-only` in `ForeverDiaryMac.entitlements`.
+
+- **[Carried over]** `SyncService.swift:87-117` `deletePhoto()` uses hard-delete — ghost photo possible on fresh install after failed remote delete
+  **Standard:** Informational — same root cause as ghost entry (now fixed with soft-delete tombstone)
+  **Risk:** If the S3/DynamoDB remote delete fails, the photo persists in the cloud. On a fresh install (no `lastSyncDate`), `pullRemote` re-downloads it. Lower impact than entry ghost since the photo exists in the user's chosen folder.
+  **Recommendation:** Apply the same soft-delete tombstone pattern to `PhotoAsset` in a future iteration. Not blocking.
+
+## Passed Checks
+
+- **A01 Broken Access Control** — NSOpenPanel is sandboxed to user-selected files only (`files.user-selected`). No user-controlled path traversal possible. Calendar date navigation uses internally-computed keys (never user-supplied strings). Future date selection blocked at UI level.
+- **A02 Cryptographic Failures** — No new crypto. AWS sync uses same SigV4/HMAC-SHA256 pipeline verified in prior audits.
+- **A03 Injection** — All SwiftData `#Predicate` macros are type-safe. All text rendered via SwiftUI `Text` and `TextEditor` — no web views, no HTML injection surface.
+- **A04 Insecure Design** — Photo count bounded by `PhotoAsset.maxPhotosPerEntry`. `urls.prefix(remaining)` prevents exceeding the limit. Debounced saves prevent concurrent write races.
+- **A05 Security Misconfiguration** — App is fully sandboxed (`com.apple.security.app-sandbox: true`). No debug flags or verbose error exposure. Notification name uses reverse-DNS convention.
+- **A06 Vulnerable Components** — No third-party dependencies. All Apple frameworks (AppKit, SwiftUI, SwiftData, CryptoKit).
+- **A07 Auth Failures** — Cognito credentials passed from iOS auth layer; same token refresh and Keychain storage as iOS.
+- **A08 Data Integrity** — `.id("\(monthDayKey)-\(year)")` on `EntryEditorView` forces view recreation on date change — prevents `@State` cross-contamination between dates.
+- **A09 Logging** — No new `print` statements with PII. `try?` used consistently — no stack trace exposure.
+- **A10 SSRF** — No new outbound URLs. Sync reuses same `APIClient` verified in prior audits.
+- **NSOpenPanel** — `allowedContentTypes` restricts to image types. `canChooseDirectories: false`. User must explicitly approve file selection. Sandboxed to user-selected scope only.
+- **Photo Gallery** — Scale bounded 1.0–4.0×. Displays only in-app `PhotoAsset.imageData` from SwiftData — no filesystem access at display time.
+- **Check-in inputs** — Toggle/TextField/NumberField all use SwiftUI type-safe bindings. Template label trimmed and validated (non-empty) before save.
+- **Test file** — `DiaryEntryDeduplicationTests.swift` uses direct model instantiation (no network, no filesystem). No secrets or PII. Follows established test conventions.
+
+## Summary
+
+| Severity | Count |
+|----------|-------|
+| Critical | 0 |
+| High     | 0 |
+| Medium   | 0 |
+| Low      | 3 |
+| **Total** | **3** |
+
+---
+
 # Security Audit — 2026-03-10 (Calendar Navigation Fix)
 
 **Scope:** Changed files on branch `fix/calendar-navigation-freeze`

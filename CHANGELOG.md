@@ -9,6 +9,15 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ## [Unreleased]
 
 ### Added
+- macOS target: full iOS feature parity — colors, photos, analytics, settings CRUD, rich On This Day panel, 3-column layout
+- Server-side last-write-wins (LWW) sync via DynamoDB `UpdateItem` + `ConditionExpression` — rejects stale pushes without data loss
+- Template soft-delete tombstone: `deletedAt`/`updatedAt` fields on `CheckInTemplate` propagate deletions to all devices
+- `updatedAt` field on `CheckInValue` for accurate cross-device sync ordering
+- Google ID token refresh via OAuth2 token endpoint using stored refresh token
+- `deduplicateTemplates()` and `deduplicateCheckInValues()` startup routines to clean sync-induced duplicates
+- `uniqueCheckInCount` computed property on `DiaryEntry` (distinct templateIds via Set)
+- `serverTime` returned in both push and pull sync responses for clock-skew-aware reconciliation
+- 13 new XCTest cases covering `completedCheckIns` deduplication and new model fields (now 90 total)
 - Email/password authentication via AWS Cognito User Pool (sign-up, confirm, sign-in, forgot password, reset password)
 - Google Sign-In via OAuth 2.0 with PKCE, federated through Cognito Identity Pool
 - Full-screen photo gallery with swipe navigation, pinch-to-zoom (1x–4x), and dismiss-by-drag
@@ -42,6 +51,12 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - 90 unit tests (theme, markdown parsing, calendar navigation)
 
 ### Fixed
+- LWW tombstone race: locally-deleted entry now accepts a newer remote re-create instead of blocking it permanently
+- `@MainActor` isolation added to `deduplicateCheckInValues()` to match all other SwiftData context functions
+- Periodic sync and `syncAll` now guarded by `cognitoAuth.isAuthenticated` — prevents tasks accumulating during sign-in flow
+- Redundant `startPeriodicSync()` removed from `startSync()`; lifecycle now owned solely by `scenePhase` handler
+- Lambda `deleted` counter now correctly subtracts unprocessed items (`batch.length - unprocessed.length`)
+- EntryDetailView and HomeView migrated from `loadEntry()` + `@State` to `@Query` for automatic reactivity to remote sync
 - Ghost entry bug: deleted entries no longer reappear after cloud sync (tombstone last-write-wins)
 - Creating an entry immediately after deleting it no longer causes duplicate DynamoDB sk errors
 - Google OAuth session that fails to start now surfaces an error instead of hanging indefinitely

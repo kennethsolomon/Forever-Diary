@@ -11,7 +11,6 @@ struct EntryDetailView: View {
     let year: Int
     var scrollToCheckIns: Bool = false
 
-    @State private var entry: DiaryEntry?
     @State private var diaryText = ""
     @State private var locationText = ""
     @State private var isCheckInsExpanded = true
@@ -24,12 +23,20 @@ struct EntryDetailView: View {
     @State private var locationSaveTask: Task<Void, Never>?
     @State private var showSaved = false
 
+    @Query private var entries: [DiaryEntry]
     @Query private var templates: [CheckInTemplate]
+
+    private var entry: DiaryEntry? { entries.first }
 
     init(monthDayKey: String, year: Int, scrollToCheckIns: Bool = false) {
         self.monthDayKey = monthDayKey
         self.year = year
         self.scrollToCheckIns = scrollToCheckIns
+        let key = monthDayKey
+        let yr = year
+        _entries = Query(
+            filter: #Predicate<DiaryEntry> { $0.monthDayKey == key && $0.year == yr && $0.deletedAt == nil }
+        )
         let sortOrder = SortDescriptor<CheckInTemplate>(\.sortOrder)
         _templates = Query(filter: #Predicate<CheckInTemplate> { $0.isActive }, sort: [sortOrder])
     }
@@ -48,13 +55,22 @@ struct EntryDetailView: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .onAppear {
-                loadEntry()
+                diaryText = entry?.diaryText ?? ""
+                locationText = entry?.locationText ?? ""
                 if scrollToCheckIns {
                     Task {
                         try? await Task.sleep(for: .seconds(0.3))
                         withAnimation { proxy.scrollTo("checkIns", anchor: .top) }
                     }
                 }
+            }
+            .onChange(of: entry?.diaryText) { _, newText in
+                // Sync diary text from remote only when not mid-save
+                guard saveTask == nil else { return }
+                diaryText = newText ?? ""
+            }
+            .onChange(of: entry?.locationText) { _, newLocation in
+                locationText = newLocation ?? ""
             }
         }
         .background(Color("backgroundPrimary"))
@@ -300,17 +316,6 @@ struct EntryDetailView: View {
 
     // MARK: - Data Operations
 
-    private func loadEntry() {
-        let key = monthDayKey
-        let yr = year
-        let descriptor = FetchDescriptor<DiaryEntry>(
-            predicate: #Predicate { $0.monthDayKey == key && $0.year == yr && $0.deletedAt == nil }
-        )
-        entry = try? modelContext.fetch(descriptor).first
-        diaryText = entry?.diaryText ?? ""
-        locationText = entry?.locationText ?? ""
-    }
-
     private func ensureEntry() -> DiaryEntry {
         if let entry { return entry }
         let parts = monthDayKey.split(separator: "-")
@@ -342,7 +347,6 @@ struct EntryDetailView: View {
         } catch {
             print("[ForeverDiary] Entry creation save failed: \(error.localizedDescription)")
         }
-        self.entry = newEntry
         return newEntry
     }
 
@@ -403,6 +407,7 @@ struct EntryDetailView: View {
             existing.boolValue = bool ?? existing.boolValue
             existing.textValue = text ?? existing.textValue
             existing.numberValue = number ?? existing.numberValue
+            existing.updatedAt = .now
         } else {
             let value = CheckInValue(templateId: template.id, boolValue: bool, textValue: text, numberValue: number)
             value.entry = e

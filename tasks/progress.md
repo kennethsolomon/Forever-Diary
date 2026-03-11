@@ -196,3 +196,49 @@
 |---------|----------|--------|--------|
 | xcodebuild build (iPhone 17 Pro Sim) | BUILD SUCCEEDED | BUILD SUCCEEDED | PASS |
 | xcodebuild test (iPhone 17 Pro Sim) | 76/76 tests pass | 76/76 tests pass | PASS |
+
+## Session: 2026-03-10 (macOS Desktop App)
+
+## Work Log
+- 2026-03-10 — Phase 1: Added ForeverDiaryMac target to project.yml (macOS 14+, shared Models+Services)
+- 2026-03-10 — Phase 1: Created ForeverDiaryMac/ directory structure with placeholder views and entitlements
+- 2026-03-10 — Phase 2: Fixed GoogleAuthService.presentationAnchor — #if os(iOS)/#if os(macOS) for UIApplication vs NSApp.keyWindow
+- 2026-03-10 — Phase 2: Fixed LocationService — requestWhenInUseAuthorization/authorizedWhenInUse wrapped in #if os(iOS), macOS uses requestAlwaysAuthorization/authorizedAlways
+- 2026-03-10 — Phase 2: Verified SyncService has no UIImage/UIKit — fully cross-platform
+- 2026-03-10 — Phase 3: Created ForeverDiaryMac/Assets.xcassets with 10 macOS color assets (parchment palette: macSidebar, macList, macEditor, macInkPrimary, macInkSecondary, macAccent, macToday, macBorder, macRowHover, macRowSelected)
+- 2026-03-10 — Phase 4: Implemented ForeverDiaryMacApp.swift — WindowGroup+Settings scenes, same SwiftData container pattern as iOS, test-host guard
+- 2026-03-10 — Phase 5: Implemented SignInMacView.swift — all auth screens (sign in, create account, verify, forgot/reset password), Google + email/password, macOS-native TextField/SecureField (no UIKeyboardType)
+- 2026-03-10 — Phase 6: Implemented CalendarSidebarView, EntryListView, EntryEditorView, MainWindowView — 3-column NavigationSplitView, calendar grid, entry year rows, text editor with debounce save, photo strip
+- 2026-03-10 — Phase 6: Added AppTheme.swift to macOS target (AppTheme defined in iOS ContentView.swift, not shared)
+- 2026-03-10 — Phase 7: Implemented AnalyticsMacView.swift — stat cards, 52-week heatmap, monthly bar chart
+- 2026-03-10 — Phase 7: Implemented SettingsMacView.swift — TabView with Account/Templates/Appearance/Sync tabs
+- 2026-03-10 — Phase 8: Added Commands to ForeverDiaryMacApp — ⌘T go-to-today via NotificationCenter, ⌘N new entry in toolbar
+- 2026-03-10 — Phase 9: Fixed pre-existing test failures in CloudSyncServiceTests (region ap-southeast-1 → ap-southeast-2)
+- 2026-03-10 — Phase 9: Both targets BUILD SUCCEEDED, iOS 76/76 tests pass
+
+## Files Created
+- ForeverDiaryMac/App/ForeverDiaryMacApp.swift
+- ForeverDiaryMac/AppTheme.swift
+- ForeverDiaryMac/GoToTodayNotification.swift
+- ForeverDiaryMac/ForeverDiaryMac.entitlements
+- ForeverDiaryMac/Assets.xcassets/ (10 color assets)
+- ForeverDiaryMac/Views/MainWindowView.swift
+- ForeverDiaryMac/Views/Sidebar/CalendarSidebarView.swift
+- ForeverDiaryMac/Views/EntryList/EntryListView.swift
+- ForeverDiaryMac/Views/Editor/EntryEditorView.swift
+- ForeverDiaryMac/Views/Auth/SignInMacView.swift
+- ForeverDiaryMac/Views/Settings/SettingsMacView.swift
+- ForeverDiaryMac/Views/Analytics/AnalyticsMacView.swift
+
+## Files Modified
+- project.yml (added ForeverDiaryMac target, macOS 14 deployment target)
+- ForeverDiary/Services/GoogleAuthService.swift (#if os(iOS/macOS) for presentationAnchor)
+- ForeverDiary/Services/LocationService.swift (#if os(iOS/macOS) for auth status checks)
+- ForeverDiaryTests/CloudSyncServiceTests.swift (fixed region assertion ap-southeast-1 → ap-southeast-2)
+
+## Test Results
+| Command | Expected | Actual | Status |
+|---------|----------|--------|--------|
+| xcodebuild build macOS (ForeverDiaryMac) | BUILD SUCCEEDED | BUILD SUCCEEDED | PASS |
+| xcodebuild build iOS (ForeverDiary) | BUILD SUCCEEDED | BUILD SUCCEEDED | PASS |
+| xcodebuild test iOS (ForeverDiary) | 76/76 tests pass | 76/76 tests pass | PASS |
