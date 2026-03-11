@@ -185,7 +185,7 @@ struct EntryEditorView: View {
                     .foregroundStyle(Color("textSecondary").opacity(0.6))
                     .italic()
             } else {
-                let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
+                let columns = [GridItem(.adaptive(minimum: 90, maximum: 90), spacing: 8)]
                 LazyVGrid(columns: columns, spacing: 8) {
                     ForEach(sortedPhotos) { photo in
                         photoCell(photo: photo)
@@ -207,12 +207,13 @@ struct EntryEditorView: View {
             if let img {
                 Image(nsImage: img)
                     .resizable()
-                    .aspectRatio(1, contentMode: .fill)
+                    .scaledToFill()
+                    .frame(width: 90, height: 90)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
             } else {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(Color("surfaceCard"))
-                    .aspectRatio(1, contentMode: .fit)
+                    .frame(width: 90, height: 90)
                     .overlay {
                         Image(systemName: "photo")
                             .foregroundStyle(Color("textSecondary"))
