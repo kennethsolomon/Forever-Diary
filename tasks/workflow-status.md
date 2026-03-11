@@ -9,9 +9,9 @@
 | 2 | /frontend-design | skipped | logic-only bug fix, no new UI |
 | 3 | /write-plan | done | 8 steps, 3 phases — skip unchanged saves, pull-before-push, cancel debounce on remote update |
 | 4 | /execute-plan | done | all 8 steps complete; iOS + macOS BUILD SUCCEEDED; all tests pass |
-| 5 | /commit | >> next << | |
-| 6 | /write-tests | not yet | |
-| 7 | /commit | not yet | conditional |
+| 5 | /commit | done | fix(sync): prevent stale local data from overwriting remote on app open |
+| 6 | /write-tests | done | 11 new tests in SyncRaceConditionTests.swift; all pass, full suite green |
+| 7 | /commit | >> next << | conditional |
 | 8 | /debug | not yet | optional |
 | 9 | /security-check | not yet | loop |
 | 10 | /commit | not yet | conditional |
