@@ -131,7 +131,8 @@ final class CloudSyncServiceTests: XCTestCase {
         let config = ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
         let container = try ModelContainer(for: schema, configurations: config)
 
-        let syncService = SyncService(apiClient: apiClient, authService: authService, container: container)
+        let networkMonitor = NetworkMonitor()
+        let syncService = SyncService(apiClient: apiClient, authService: authService, container: container, networkMonitor: networkMonitor)
         XCTAssertFalse(syncService.isSyncing)
         XCTAssertNil(syncService.lastError)
     }
