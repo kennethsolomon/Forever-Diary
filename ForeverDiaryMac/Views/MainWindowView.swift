@@ -71,5 +71,6 @@ struct EntryEditorContainer: View {
 
     var body: some View {
         EntryEditorView(monthDayKey: monthDayKey, year: year, entry: entries.first)
+            .id("\(monthDayKey)-\(year)")
     }
 }

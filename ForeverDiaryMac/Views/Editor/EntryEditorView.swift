@@ -111,8 +111,10 @@ struct EntryEditorView: View {
             locationText = entry?.locationText ?? ""
         }
         .onChange(of: entry?.diaryText) { _, newText in
+            // Only sync from model if no local edit is in flight
             guard saveTask == nil else { return }
-            diaryText = newText ?? ""
+            let incoming = newText ?? ""
+            if incoming != diaryText { diaryText = incoming }
         }
         .onChange(of: entry?.locationText) { _, newLocation in
             locationText = newLocation ?? ""
