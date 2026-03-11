@@ -178,14 +178,10 @@ final class LightweightSyncCheckTests: XCTestCase {
         syncService.stopPeriodicSync()
     }
 
-    // MARK: - syncAll skips when already syncing
+    // MARK: - SyncService initial state
 
-    func testSyncAllSkipsWhenNotConnected() async throws {
-        // syncAll guards on networkMonitor.isConnected
-        // NetworkMonitor defaults to isConnected = true, so we verify
-        // the isSyncing guard instead — syncAll should not leave isSyncing stuck
+    func testSyncServiceNotSyncingOnInit() throws {
         let syncService = try makeSyncService()
-
         XCTAssertFalse(syncService.isSyncing, "Should not be syncing initially")
     }
 }

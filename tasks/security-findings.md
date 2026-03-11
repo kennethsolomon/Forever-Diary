@@ -5,6 +5,57 @@
 
 ---
 
+# Security Audit — 2026-03-11 (Lightweight Sync Check + Remote Update Toast)
+
+**Scope:** Changed files on branch `feat/lightweight-sync-check`
+**Stack:** Swift / SwiftUI (iOS 17+ / macOS 14+) + SwiftData + Node.js Lambda
+**Files audited:** 5 (SyncService.swift, HomeView.swift, EntryEditorView.swift, LightweightSyncCheckTests.swift, index.mjs)
+
+## Critical (must fix before deploy)
+
+_None found._
+
+## High (fix before production)
+
+_None found._
+
+## Medium (should fix)
+
+_None found._
+
+## Low / Informational
+
+_None found._
+
+## Passed Checks
+
+- **A01 Broken Access Control** — `handleChangeCheck()` uses `userId` from `event.requestContext.identity.cognitoIdentityId` (Cognito-managed, cannot be spoofed). No IDOR — each user can only query their own partition. `checkForChanges()` guards on `authService.isAuthenticated` before making API calls.
+- **A02 Cryptographic Failures** — No new cryptographic operations. API calls use existing SigV4 HMAC-SHA256 pipeline.
+- **A03 Injection** — `since` query parameter is passed to DynamoDB via `marshall()` which handles safe serialization. No string interpolation in queries. SwiftUI toast renders hardcoded text only — no user input rendered.
+- **A04 Insecure Design** — Lightweight check returns `{ hasChanges: bool, serverTime }` only — no item data exposed. `Limit: 1` + `Select: "COUNT"` minimizes read cost. On error, `checkForChanges()` falls back to `true` (assume changes) — safe fallback that never hides data. Periodic sync cancels previous task before starting new one — no unbounded task creation.
+- **A05 Security Misconfiguration** — No new configuration, entitlements, or permissions. No CORS headers on new endpoint (inherits existing config).
+- **A06 Vulnerable Components** — No new dependencies on either platform.
+- **A07 Auth Failures** — `checkForChanges()` calls `authService.refreshIfNeeded()` before API call — consistent with all other sync methods. Guard clause prevents API calls when unauthenticated.
+- **A08 Data Integrity** — `upsertEntry()` return value change (`Void` → `Bool`) does not alter LWW logic — only tracks whether a change was applied. `pullRemote()` toast trigger is downstream of existing `context.save()` — no new write paths.
+- **A09 Logging** — New `print` statement in `pullRemote()` logs only item count and applied change count — no PII. Toast trigger has no logging.
+- **A10 SSRF** — No new outbound URLs. `checkForChanges()` calls the same `/sync` endpoint via existing `apiClient.get()`.
+- **Thread Safety** — `triggerRemoteUpdateToast()` is `@MainActor` — safe for SwiftUI observation. `toastDismissTask?.cancel()` prevents concurrent dismiss timers. `showRemoteUpdateToast` is modified only from `@MainActor` context.
+- **Resource Management** — `startPeriodicSync()` cancels previous periodic task before creating new one. `toastDismissTask` is cancelled on re-trigger. No memory leaks or unbounded task accumulation.
+- **Information Minimization** — `handleChangeCheck()` returns only a boolean and server timestamp — never item content, even on error. This follows the principle of least privilege for data exposure.
+- **Test File** — `LightweightSyncCheckTests.swift` uses in-memory containers with `cloudKitDatabase: .none`, `ModelContext(container)`, no `@MainActor` on test class. No secrets, no PII, no network calls. Follows `tasks/lessons.md` constraints.
+
+## Summary
+
+| Severity | Count |
+|----------|-------|
+| Critical | 0 |
+| High     | 0 |
+| Medium   | 0 |
+| Low      | 0 |
+| **Total** | **0** |
+
+---
+
 # Security Audit — 2026-03-11 (Sync Race Condition Fix)
 
 **Scope:** Changed files on branch `fix/sync-race-condition`

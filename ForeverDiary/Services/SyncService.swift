@@ -606,7 +606,6 @@ final class SyncService {
 
     /// Returns `true` if a remote change was actually applied to local data.
     @MainActor
-    @discardableResult
     private func upsertEntry(_ item: [String: Any], sk: String, context: ModelContext) throws -> Bool {
         let parts = sk.split(separator: "#")
         guard parts.count >= 3,

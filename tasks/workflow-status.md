@@ -11,10 +11,10 @@
 | 4 | /execute-plan | done | all 10 steps complete; iOS + macOS BUILD SUCCEEDED; 111/111 tests pass |
 | 5 | /commit | done | feat(sync) + chore(tasks) commits on feat/lightweight-sync-check |
 | 6 | /write-tests | done | 11 new tests in LightweightSyncCheckTests.swift; 122/122 pass |
-| 7 | /commit | >> next << | conditional |
-| 8 | /debug | not yet | optional |
-| 9 | /security-check | not yet | loop |
-| 10 | /commit | not yet | conditional |
+| 7 | /commit | done | test(sync) commit b4b4cfd |
+| 8 | /debug | skipped | no issues to debug |
+| 9 | /security-check | done | clean — 0 findings across all severities |
+| 10 | /commit | >> next << | conditional |
 | 11 | /review | not yet | loop |
 | 12 | /commit | not yet | conditional |
 | 13 | /finish-feature | not yet | |

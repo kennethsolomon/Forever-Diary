@@ -196,7 +196,6 @@ async function handleChangeCheck(userId, since) {
     KeyConditionExpression: "userId = :uid",
     FilterExpression: "updatedAt > :since",
     ExpressionAttributeValues: marshall({ ":uid": userId, ":since": since }),
-    Limit: 1,
     Select: "COUNT",
   };
 
