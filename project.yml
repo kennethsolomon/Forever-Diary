@@ -3,6 +3,7 @@ options:
   bundleIdPrefix: com.foreverdiary
   deploymentTarget:
     iOS: "17.0"
+    macOS: "14.0"
   xcodeVersion: "16.0"
   generateEmptyDirectories: true
 
@@ -42,6 +43,38 @@ targets:
     entitlements:
       path: ForeverDiary/ForeverDiary.entitlements
       properties: {}
+
+  ForeverDiaryMac:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    dependencies:
+      - sdk: PhotosUI.framework
+        embed: false
+    sources:
+      - path: ForeverDiaryMac
+        excludes:
+          - "**/.DS_Store"
+      - path: ForeverDiary/Models
+        excludes:
+          - "**/.DS_Store"
+      - path: ForeverDiary/Services
+        excludes:
+          - "**/.DS_Store"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.foreverdiary.mac
+        INFOPLIST_KEY_CFBundleDisplayName: "Forever Diary"
+        GENERATE_INFOPLIST_FILE: true
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SWIFT_EMIT_LOC_STRINGS: true
+        CODE_SIGN_ENTITLEMENTS: ForeverDiaryMac/ForeverDiaryMac.entitlements
+    entitlements:
+      path: ForeverDiaryMac/ForeverDiaryMac.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.files.user-selected.read-write: true
 
   ForeverDiaryTests:
     type: bundle.unit-test
