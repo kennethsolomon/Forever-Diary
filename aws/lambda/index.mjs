@@ -120,7 +120,7 @@ async function handleSyncPush(userId, body) {
       if (unprocessed.length > 0) {
         console.warn(`${unprocessed.length} delete items unprocessed after retries`);
       }
-      deleted += batch.length;
+      deleted += batch.length - unprocessed.length;
     }
   }
 

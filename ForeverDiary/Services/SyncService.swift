@@ -224,6 +224,7 @@ final class SyncService {
 
     /// Remove duplicate CheckInValues — keeps the latest per (entry, templateId) pair.
     /// Fixes inflated counts caused by UUID mismatches during cross-device sync.
+    @MainActor
     func deduplicateCheckInValues() async {
         let context = ModelContext(container)
         guard let all = try? context.fetch(FetchDescriptor<CheckInValue>()) else { return }
@@ -575,9 +576,12 @@ final class SyncService {
         }
 
         if let local = existing.first {
-            // Skip if local is a pending tombstone (user deleted locally but not yet pushed)
-            if local.deletedAt != nil { return }
+            // Skip if local tombstone is newer than or equal to the remote update.
+            // If remoteUpdatedAt > local.deletedAt, the remote is a re-create/re-edit that
+            // wins LWW — clear the tombstone and apply the remote update below.
+            if let localDeletedAt = local.deletedAt, localDeletedAt >= remoteUpdatedAt { return }
             if remoteUpdatedAt > local.updatedAt {
+                local.deletedAt = nil
                 local.diaryText = item["diaryText"] as? String ?? local.diaryText
                 local.locationText = item["locationText"] as? String
                 local.weekday = item["weekday"] as? String ?? local.weekday

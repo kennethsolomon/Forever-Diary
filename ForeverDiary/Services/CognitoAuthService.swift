@@ -229,9 +229,11 @@ final class CognitoAuthService {
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 15
 
+        let unreserved = CharacterSet.alphanumerics.union(.init(charactersIn: "-._~"))
+        let encodedToken = refreshToken.addingPercentEncoding(withAllowedCharacters: unreserved) ?? refreshToken
         let params = [
             "client_id=\(AWSConfig.googleClientId)",
-            "refresh_token=\(refreshToken)",
+            "refresh_token=\(encodedToken)",
             "grant_type=refresh_token"
         ].joined(separator: "&")
         request.httpBody = params.data(using: .utf8)

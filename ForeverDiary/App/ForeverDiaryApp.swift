@@ -74,6 +74,7 @@ struct ForeverDiaryApp: App {
         }
         .modelContainer(container)
         .onChange(of: scenePhase) { _, phase in
+            guard cognitoAuth.isAuthenticated else { return }
             if phase == .active {
                 Task { await syncService.syncAll() }
                 syncService.startPeriodicSync()
@@ -94,7 +95,5 @@ struct ForeverDiaryApp: App {
         TemplateSeedService.seedDefaultTemplatesIfNeeded(context: seedCtx)
         await syncService.deduplicateTemplates()
         await syncService.deduplicateCheckInValues()
-
-        syncService.startPeriodicSync()
     }
 }
