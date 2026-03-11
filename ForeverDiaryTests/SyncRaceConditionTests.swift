@@ -177,16 +177,17 @@ final class SyncRaceConditionTests: XCTestCase {
         context.insert(entry)
         try context.save()
 
-        let before = entry.updatedAt
+        // Set updatedAt to a known past date to avoid timing dependency
+        let pastDate = Date(timeIntervalSince1970: 1000)
+        entry.updatedAt = pastDate
 
         // Simulate a real edit (what happens when guard passes)
-        Thread.sleep(forTimeInterval: 0.01)
         entry.diaryText = "edited"
         entry.updatedAt = .now
         entry.syncStatus = SyncStatus.pending
         try context.save()
 
-        XCTAssertGreaterThan(entry.updatedAt, before)
+        XCTAssertGreaterThan(entry.updatedAt, pastDate)
         XCTAssertEqual(entry.syncStatus, SyncStatus.pending)
         XCTAssertEqual(entry.diaryText, "edited")
     }

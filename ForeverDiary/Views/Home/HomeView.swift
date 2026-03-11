@@ -250,11 +250,14 @@ private struct LocationEditSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         if let entry {
-                            entry.locationText = locationText.isEmpty ? nil : locationText
-                            entry.updatedAt = .now
-                            entry.syncStatus = SyncStatus.pending
-                            try? modelContext.save()
-                            syncService.scheduleDebouncedSync()
+                            let newLocation = locationText.isEmpty ? nil : locationText
+                            if newLocation != entry.locationText {
+                                entry.locationText = newLocation
+                                entry.updatedAt = .now
+                                entry.syncStatus = SyncStatus.pending
+                                try? modelContext.save()
+                                syncService.scheduleDebouncedSync()
+                            }
                         }
                         dismiss()
                     }
