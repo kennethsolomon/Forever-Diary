@@ -1,47 +1,65 @@
-# Forever Diary — Offline-First Auth Fix
+# Sync Race Condition — Stale Local Data Overwrites Remote on App Open
 
 ## Problem Statement
 
-When the device has no internet connection, the app redirects the user to the login screen instead of staying open. This happens on both iOS and macOS. The app should be usable offline — the user should be able to read and write diary entries with sync deferred until connectivity returns.
+When a user edits a diary entry on macOS, closes the app (data syncs to cloud), then opens the iOS app, the iOS app overwrites the macOS edits with its stale local version. The same bug exists in reverse (iOS → macOS).
 
 ## Root Cause
 
-`CognitoAuthService.refreshIfNeeded()` (line 220) unconditionally calls `signOut()` when all credential refresh network calls fail. A network timeout is not an auth failure — but the code treats them identically.
+`HomeView.onAppear` (iOS) and `EntryEditorView.onAppear` (macOS) load the old local entry text into `@State var diaryText`. This triggers `onChange(of: diaryText)` → `debounceSave()` → `saveEntry()`, which sets `updatedAt = .now` and `syncStatus = "pending"` — even though the user didn't type anything.
 
-Flow:
-1. App launches → Keychain has `identityId` + `userEmail` → `isAuthenticated = true`
-2. `startSync()` → `syncAll()` → `refreshIfNeeded()`
-3. All 4 refresh paths fail (no network) → `signOut()` → `isAuthenticated = false`
-4. App shows `SignInView` — wrong
+Race sequence:
+1. App opens → `onAppear` loads old local text into `diaryText`
+2. `onChange(of: diaryText)` fires ("" → "old text" is a change)
+3. `debounceSave()` starts (saveTask is now non-nil, 1s timer)
+4. `syncAll()` → `pullRemote()` fetches newer macOS data, updates entry model
+5. `onChange(of: entry?.diaryText)` fires, but `guard saveTask == nil` blocks it (line 61/117)
+6. 1 second later: `saveEntry()` writes OLD text with FRESH `updatedAt = .now`, `syncStatus = "pending"`
+7. Next sync: `pushPending()` sends stale text with the newest timestamp → overwrites cloud
+8. Other device pulls → LWW picks the stale-but-newer entry → data loss
 
-## Key Decisions
+Additionally, `syncAll()` runs push-before-pull, so any locally pending items get pushed before the device has a chance to learn about newer remote changes.
 
-1. **Fix A: Remove `signOut()` from `refreshIfNeeded()`**
-   - When all credential refresh attempts fail, return without signing out
-   - `credentials` stays nil; sync calls will throw and be caught by `syncAll()`'s catch block
-   - `isAuthenticated` stays true (Keychain still valid)
-   - Sign-out should only happen on explicit user action or definitive HTTP 401/403 from Cognito
+## Affected Files
 
-2. **Fix C: Add `NWPathMonitor` reachability guard**
-   - Wrap `Network.framework` in a lightweight `NetworkMonitor` observable
-   - In `syncAll()`, skip the entire sync when offline (no `refreshIfNeeded()` call, no network I/O)
-   - Expose `isConnected: Bool` so the Settings sync status row can show an "Offline" badge
-   - `NWPathMonitor` starts on app foreground, stops on background (tied to `scenePhase`)
+- `ForeverDiary/Views/Home/HomeView.swift` — iOS (lines 56, 59-63, 116-118, 192-225)
+- `ForeverDiaryMac/Views/Editor/EntryEditorView.swift` — macOS (lines 81, 111-117, 404-427)
+- `ForeverDiary/Services/SyncService.swift` — push-before-pull order (line 266-268)
 
-## Chosen Approach
+## Chosen Approach: A + C
 
-**A + C combined:**
-- A is the defensive root fix (correct behavior even without C)
-- C adds proper offline UX and prevents unnecessary network attempts
+### Phase 1: Bug Fix (A + C)
+
+**A — Skip save if text unchanged:**
+- In `saveEntry()` (iOS) and `debounceSave()` (macOS), compare new text with `entry.diaryText` before saving
+- If identical, return early — no `updatedAt` bump, no `syncStatus = "pending"`
+- This directly prevents `onAppear` from creating spurious pending saves
+- Apply the same guard to `locationText` saves
+
+**C — Pull-before-push + cancel debounce on remote update:**
+- Reorder `syncAll()` to run `pullRemote()` before `pushPending()`
+- LWW guards in `upsertEntry()` already prevent overwriting newer local data, so pull-first is safe
+- In `onChange(of: entry?.diaryText)`, cancel `saveTask` and update `diaryText` when remote data arrives (instead of silently skipping)
+- This ensures the UI always reflects the latest data from any device
+
+### Phase 2: Push-Triggered Sync (future)
+
+**APNS silent push notification after a device pushes:**
+- After `pushPending()` succeeds, send a silent push via APNS to other devices
+- Receiving device calls `syncAll()` immediately instead of waiting for the 15s periodic timer
+- Requires: APNS certificate/key in Lambda, device token registration endpoint, `application(_:didReceiveRemoteNotification:)` handler
+- Reduces sync delay from up to 15 seconds to near-instant
+- Scoped as a separate feature — not blocking for the bug fix
 
 ## Constraints
 
-- `Network.framework` must be added to both iOS and macOS targets in `project.yml`
-- `NetworkMonitor` should use `@Observable` to match existing service pattern
-- The "Offline" indicator lives in Settings sync status row — no new UI component needed elsewhere
-- Sync queue (pending entries) must NOT be lost — only skipped until connectivity returns
-- No changes to SwiftData models or DynamoDB schema
+- Both iOS and macOS editors must be fixed (same pattern, both affected)
+- Must not break real-time typing — only skip save when text is truly identical
+- `onChange(of: entry?.diaryText)` must still cancel debounce and update UI on remote changes
+- Lessons learned: no `@Attribute(.unique)`, use `ModelContext(container)` in tests, guard test host init
+- Security: no new OWASP surface introduced by reordering push/pull
 
 ## Open Questions
 
-- None — approach is clear
+- None for Phase 1
+- Phase 2 (APNS): exact Lambda implementation and device token storage TBD during that planning cycle

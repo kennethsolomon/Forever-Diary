@@ -57,8 +57,9 @@ struct HomeView: View {
                 isTextEditorFocused = true
             }
             .onChange(of: entry?.diaryText) { _, newText in
-                // Sync diary text from remote only when not mid-save
-                guard saveTask == nil else { return }
+                // Cancel any in-flight debounce so remote data takes priority
+                saveTask?.cancel()
+                saveTask = nil
                 diaryText = newText ?? ""
             }
         }
@@ -191,6 +192,7 @@ struct HomeView: View {
 
     private func saveEntry(text: String) {
         if let entry {
+            guard text != entry.diaryText else { saveTask = nil; return }
             entry.diaryText = text
             entry.updatedAt = .now
             entry.syncStatus = SyncStatus.pending
@@ -248,11 +250,14 @@ private struct LocationEditSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         if let entry {
-                            entry.locationText = locationText.isEmpty ? nil : locationText
-                            entry.updatedAt = .now
-                            entry.syncStatus = SyncStatus.pending
-                            try? modelContext.save()
-                            syncService.scheduleDebouncedSync()
+                            let newLocation = locationText.isEmpty ? nil : locationText
+                            if newLocation != entry.locationText {
+                                entry.locationText = newLocation
+                                entry.updatedAt = .now
+                                entry.syncStatus = SyncStatus.pending
+                                try? modelContext.save()
+                                syncService.scheduleDebouncedSync()
+                            }
                         }
                         dismiss()
                     }

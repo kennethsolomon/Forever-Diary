@@ -5,6 +5,55 @@
 
 ---
 
+# Security Audit — 2026-03-11 (Sync Race Condition Fix)
+
+**Scope:** Changed files on branch `fix/sync-race-condition`
+**Stack:** Swift / SwiftUI (iOS 17+ / macOS 14+) + SwiftData
+**Files audited:** 4 (SyncService.swift, HomeView.swift, EntryEditorView.swift, SyncRaceConditionTests.swift)
+
+## Critical (must fix before deploy)
+
+_None found._
+
+## High (fix before production)
+
+_None found._
+
+## Medium (should fix)
+
+_None found._
+
+## Low / Informational
+
+_None found._
+
+## Passed Checks
+
+- **A01 Broken Access Control** — No auth logic changed. Guards only compare string equality on local model properties. No new data access paths introduced.
+- **A02 Cryptographic Failures** — No cryptographic operations in changed code.
+- **A03 Injection** — No user input flows to queries or commands. String comparisons are pure value checks on SwiftData model properties. No new predicates or queries added.
+- **A04 Insecure Design** — Pull-before-push reorder is safe: `upsertEntry()` LWW guards (`remoteUpdatedAt > local.updatedAt`) prevent remote from overwriting newer local data. Cancelling `saveTask` on remote update is safe: next keystroke restarts debounce. No retry storms or unbounded loops.
+- **A05 Security Misconfiguration** — No new configuration, entitlements, or permissions.
+- **A06 Vulnerable Components** — No new dependencies.
+- **A07 Auth Failures** — No auth changes. `refreshIfNeeded()` call position unchanged (still before sync operations).
+- **A08 Data Integrity** — `guard text != entry.diaryText` prevents spurious `updatedAt` bumps that caused LWW data loss. `guard newLocation != entry.locationText` handles nil comparison correctly via Swift optional equality. Pull-before-push ensures device learns remote changes before pushing its own.
+- **A09 Logging** — No new logging statements. No PII exposure.
+- **A10 SSRF** — No new outbound URLs or network calls.
+- **Thread Safety** — `saveTask?.cancel(); saveTask = nil` runs on main thread (SwiftUI view context). `debounceSave` uses `MainActor.run`. No cross-thread mutation.
+- **Test File** — Uses in-memory containers with `cloudKitDatabase: .none`, `ModelContext(container)`, no `@MainActor`. Follows lessons.md constraints. No secrets, no PII, no network calls.
+
+## Summary
+
+| Severity | Count |
+|----------|-------|
+| Critical | 0 |
+| High     | 0 |
+| Medium   | 0 |
+| Low      | 0 |
+| **Total** | **0** |
+
+---
+
 # Security Audit — 2026-03-10
 
 **Scope:** Full project scan

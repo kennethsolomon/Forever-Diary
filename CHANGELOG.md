@@ -54,6 +54,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - 90 unit tests (theme, markdown parsing, calendar navigation)
 
 ### Fixed
+- Sync race condition: opening the app no longer overwrites newer remote edits with stale local data — `syncAll()` now pulls before pushing, debounce is cancelled on remote update, and saves are skipped when text/location is unchanged
 - App no longer redirects to login when device has no internet — `refreshIfNeeded()` now returns silently instead of calling `signOut()` on network failure
 - `syncAll()` skips network operations immediately when offline instead of failing mid-sync
 - LWW tombstone race: locally-deleted entry now accepts a newer remote re-create instead of blocking it permanently

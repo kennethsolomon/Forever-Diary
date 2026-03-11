@@ -254,7 +254,7 @@ final class SyncService {
         }
     }
 
-    /// Full sync: push pending, pull remote, sync photos.
+    /// Full sync: pull remote first (so latest cloud data wins), then push pending.
     func syncAll() async {
         guard networkMonitor.isConnected else { return }
         guard !isSyncing else { return }
@@ -263,8 +263,8 @@ final class SyncService {
 
         do {
             try await authService.refreshIfNeeded()
-            try await pushPending()
             let serverTime = try await pullRemote()
+            try await pushPending()
             try await uploadPhotos()
             try await downloadPhotos()
             // Use server-side timestamp to avoid clock-skew misses on next pull
