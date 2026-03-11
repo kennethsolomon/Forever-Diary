@@ -7,6 +7,7 @@ struct ForeverDiaryApp: App {
     let cognitoAuth: CognitoAuthService
     let googleAuth: GoogleAuthService
     let syncService: SyncService
+    let networkMonitor: NetworkMonitor
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -54,9 +55,11 @@ struct ForeverDiaryApp: App {
 
         let auth = CognitoAuthService()
         let api = APIClient(authService: auth)
+        let monitor = NetworkMonitor()
         cognitoAuth = auth
         googleAuth = GoogleAuthService()
-        syncService = SyncService(apiClient: api, authService: auth, container: resolvedContainer)
+        networkMonitor = monitor
+        syncService = SyncService(apiClient: api, authService: auth, container: resolvedContainer, networkMonitor: monitor)
     }
 
     var body: some Scene {
@@ -65,6 +68,7 @@ struct ForeverDiaryApp: App {
                 ContentView()
                     .environment(syncService)
                     .environment(cognitoAuth)
+                    .environment(networkMonitor)
                     .task { await startSync() }
             } else {
                 SignInView()
@@ -74,11 +78,13 @@ struct ForeverDiaryApp: App {
         }
         .modelContainer(container)
         .onChange(of: scenePhase) { _, phase in
-            guard cognitoAuth.isAuthenticated else { return }
             if phase == .active {
+                networkMonitor.start()
+                guard cognitoAuth.isAuthenticated else { return }
                 Task { await syncService.syncAll() }
                 syncService.startPeriodicSync()
             } else if phase == .background {
+                networkMonitor.stop()
                 syncService.stopPeriodicSync()
             }
         }

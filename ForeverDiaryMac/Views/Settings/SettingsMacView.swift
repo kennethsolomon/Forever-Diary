@@ -259,6 +259,7 @@ private struct HabitsTab: View {
 
 private struct SyncTab: View {
     @Environment(SyncService.self) private var syncService
+    @Environment(NetworkMonitor.self) private var networkMonitor
 
     private var lastSyncText: String {
         guard let date = syncService.lastSyncDate else { return "Never synced" }
@@ -272,11 +273,15 @@ private struct SyncTab: View {
             Spacer()
 
             VStack(spacing: 16) {
-                Image(systemName: syncService.isSyncing ? "icloud.and.arrow.up" : "icloud.fill")
+                Image(systemName: !networkMonitor.isConnected ? "wifi.slash" : syncService.isSyncing ? "icloud.and.arrow.up" : "icloud.fill")
                     .font(.system(size: 40))
-                    .foregroundStyle(syncService.lastError != nil ? Color("destructive") : Color("accentBright"))
+                    .foregroundStyle(!networkMonitor.isConnected ? Color("textSecondary") : syncService.lastError != nil ? Color("destructive") : Color("accentBright"))
 
-                if syncService.isSyncing {
+                if !networkMonitor.isConnected {
+                    Text("Offline")
+                        .font(.system(.subheadline, design: .rounded))
+                        .foregroundStyle(Color("textSecondary"))
+                } else if syncService.isSyncing {
                     HStack(spacing: 8) {
                         ProgressView()
                             .controlSize(.small)
@@ -290,7 +295,7 @@ private struct SyncTab: View {
                         .foregroundStyle(Color("textSecondary"))
                 }
 
-                if let error = syncService.lastError {
+                if networkMonitor.isConnected, let error = syncService.lastError {
                     Text(error)
                         .font(.system(.caption, design: .rounded))
                         .foregroundStyle(Color("destructive"))
@@ -308,11 +313,11 @@ private struct SyncTab: View {
                         .padding(.vertical, 10)
                         .background(
                             RoundedRectangle(cornerRadius: 8)
-                                .fill(syncService.isSyncing ? Color("textSecondary") : Color("accentBright"))
+                                .fill(syncService.isSyncing || !networkMonitor.isConnected ? Color("textSecondary") : Color("accentBright"))
                         )
                 }
                 .buttonStyle(.plain)
-                .disabled(syncService.isSyncing)
+                .disabled(syncService.isSyncing || !networkMonitor.isConnected)
             }
 
             Spacer()

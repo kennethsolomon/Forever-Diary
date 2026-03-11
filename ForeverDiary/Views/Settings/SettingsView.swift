@@ -5,6 +5,7 @@ struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(SyncService.self) private var syncService
     @Environment(CognitoAuthService.self) private var cognitoAuth
+    @Environment(NetworkMonitor.self) private var networkMonitor
     @Query(sort: \CheckInTemplate.sortOrder) private var templates: [CheckInTemplate]
 
     @AppStorage("appTheme") private var appTheme: String = AppTheme.system.rawValue
@@ -178,6 +179,10 @@ struct SettingsView: View {
                 if syncService.isSyncing {
                     ProgressView()
                         .controlSize(.small)
+                } else if !networkMonitor.isConnected {
+                    Text("Offline")
+                        .font(.system(.subheadline, design: .rounded))
+                        .foregroundStyle(Color("textSecondary"))
                 } else {
                     Text("Active")
                         .font(.system(.subheadline, design: .rounded))
@@ -218,7 +223,7 @@ struct SettingsView: View {
                     }
                 }
             }
-            .disabled(syncService.isSyncing)
+            .disabled(syncService.isSyncing || !networkMonitor.isConnected)
         } header: {
             Text("Sync")
         }
