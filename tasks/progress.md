@@ -1,5 +1,22 @@
 # Progress Log
 
+## Session: 2026-03-11 — Sync Race Condition Fix
+
+### Work Log
+- Added `guard text != entry.diaryText` in iOS `HomeView.saveEntry()` — skips save when text unchanged
+- Added `guard text != e.diaryText` in macOS `EntryEditorView.debounceSave()` — same fix
+- Added `guard newLocation != entry.locationText` in macOS `EntryEditorView.saveLocation()` — skips spurious location saves
+- Reordered `SyncService.syncAll()`: `pullRemote()` now runs before `pushPending()`
+- Changed `onChange(of: entry?.diaryText)` on both iOS and macOS to cancel `saveTask` instead of skipping — remote data always propagates
+- iOS BUILD SUCCEEDED (iPhone 16e), macOS BUILD SUCCEEDED, all tests pass
+
+### Files Modified
+- ForeverDiary/Views/Home/HomeView.swift (saveEntry guard + onChange cancel)
+- ForeverDiaryMac/Views/Editor/EntryEditorView.swift (debounceSave guard + saveLocation guard + onChange cancel)
+- ForeverDiary/Services/SyncService.swift (pull-before-push reorder)
+
+---
+
 ## Session: 2026-03-11 — Offline-First Auth Fix
 
 ### Work Log
