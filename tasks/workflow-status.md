@@ -5,17 +5,17 @@
 
 | # | Step | Status | Notes |
 |---|------|--------|-------|
-| 1 | /brainstorm | done | sync race condition: onAppear triggers spurious save overwriting remote data; fix A+C chosen, APNS phase 2 |
-| 2 | /frontend-design | skipped | logic-only bug fix, no new UI |
-| 3 | /write-plan | done | 8 steps, 3 phases — skip unchanged saves, pull-before-push, cancel debounce on remote update |
-| 4 | /execute-plan | done | all 8 steps complete; iOS + macOS BUILD SUCCEEDED; all tests pass |
-| 5 | /commit | done | fix(sync): prevent stale local data from overwriting remote on app open |
-| 6 | /write-tests | done | 11 new tests in SyncRaceConditionTests.swift; all pass, full suite green |
-| 7 | /commit | done | test(sync): add race condition guard tests |
-| 8 | /debug | done | fixed 2 nitpicks from review |
-| 9 | /security-check | done | clean — 0 Critical, 0 High, 0 Medium, 0 Low |
-| 10 | /commit | done | chore(tasks): update security findings and workflow status |
-| 11 | /review | done | clean on attempt 2 |
-| 12 | /commit | skipped | review was clean |
-| 13 | /finish-feature | >> next << | |
+| 1 | /brainstorm | done | polling optimization (Approach A): 5s lightweight check, "Updated" toast, both platforms |
+| 2 | /frontend-design | done | SyncToast component: slide-down banner, accentBright icon, 3s auto-dismiss, both platforms |
+| 3 | /write-plan | done | 10 steps, 4 phases — lightweight check endpoint, toast state, iOS+macOS toast UI, verify |
+| 4 | /execute-plan | done | all 10 steps complete; iOS + macOS BUILD SUCCEEDED; 111/111 tests pass |
+| 5 | /commit | >> next << | |
+| 6 | /write-tests | not yet | |
+| 7 | /commit | not yet | conditional |
+| 8 | /debug | not yet | optional |
+| 9 | /security-check | not yet | loop |
+| 10 | /commit | not yet | conditional |
+| 11 | /review | not yet | loop |
+| 12 | /commit | not yet | conditional |
+| 13 | /finish-feature | not yet | |
 | 14 | /release | not yet | optional |

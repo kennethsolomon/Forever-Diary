@@ -1,65 +1,54 @@
-# Sync Race Condition — Stale Local Data Overwrites Remote on App Open
+# Polling Optimization — Near-Instant Cross-Device Sync
 
 ## Problem Statement
 
-When a user edits a diary entry on macOS, closes the app (data syncs to cloud), then opens the iOS app, the iOS app overwrites the macOS edits with its stale local version. The same bug exists in reverse (iOS → macOS).
+After Phase 1 sync fixes (pull-before-push, skip-unchanged guards), cross-device sync is correct but slow when both apps are open simultaneously. The 15-second periodic sync interval means edits on one device take up to 15 seconds to appear on the other. There is no visual feedback when remote changes arrive.
 
-## Root Cause
+## Scenarios
 
-`HomeView.onAppear` (iOS) and `EntryEditorView.onAppear` (macOS) load the old local entry text into `@State var diaryText`. This triggers `onChange(of: diaryText)` → `debounceSave()` → `saveEntry()`, which sets `updatedAt = .now` and `syncStatus = "pending"` — even though the user didn't type anything.
+| Scenario | Current (Phase 1) | After Approach A |
+|----------|-------------------|------------------|
+| App closed, open later | Works correctly (pull-first) | Same — no change needed |
+| App open, other device edits | Up to 15s delay, no notification | Up to 15s delay + "Updated" toast + cheaper polls |
+| App backgrounded, other device edits | Syncs on next foreground | Same — no change needed |
 
-Race sequence:
-1. App opens → `onAppear` loads old local text into `diaryText`
-2. `onChange(of: diaryText)` fires ("" → "old text" is a change)
-3. `debounceSave()` starts (saveTask is now non-nil, 1s timer)
-4. `syncAll()` → `pullRemote()` fetches newer macOS data, updates entry model
-5. `onChange(of: entry?.diaryText)` fires, but `guard saveTask == nil` blocks it (line 61/117)
-6. 1 second later: `saveEntry()` writes OLD text with FRESH `updatedAt = .now`, `syncStatus = "pending"`
-7. Next sync: `pushPending()` sends stale text with the newest timestamp → overwrites cloud
-8. Other device pulls → LWW picks the stale-but-newer entry → data loss
+## Chosen Approach: Polling Optimization (Approach A)
 
-Additionally, `syncAll()` runs push-before-pull, so any locally pending items get pushed before the device has a chance to learn about newer remote changes.
+No APNS — no paid Apple Developer account required.
+
+### Changes
+
+1. **Lightweight change-check endpoint** — New `GET /sync?check=true` (or `HEAD /sync`) Lambda handler that returns only `{ hasChanges: bool, serverTime }` based on whether any items have `updatedAt > lastSyncDate`. Cheap query, minimal bandwidth.
+
+2. **Keep 15s polling, use lightweight check** — Keep existing 15-second interval. Each poll calls the lightweight check first — only triggers full `syncAll()` if `hasChanges` is true. Saves bandwidth and battery without increasing request frequency.
+
+3. **"Updated from another device" toast** — When `pullRemote()` finds and applies newer remote data, show a brief toast/banner on both iOS and macOS. Visible confirmation that sync happened.
+
+4. **Both platforms** — iOS (`ForeverDiaryApp`) and macOS (`ForeverDiaryMacApp`) get the same polling interval and toast behavior.
+
+### What Users See
+
+- Edits on one device appear on the other within up to 15 seconds (while both are open) — same interval, but cheaper per poll
+- A brief "Updated from another device" message confirms the sync
+- No change to offline-first behavior — local edits save immediately
+- No change to app-open behavior — full sync still runs on foreground
+
+### Constraints
+
+- No paid Apple Developer account — no APNS, no background sync
+- Must not increase battery/network usage — lightweight check reduces bandwidth per poll, interval stays at 15s
+- Must work on both iOS 17+ and macOS 14+
+- Lessons: no `@Attribute(.unique)`, use `ModelContext(container)` in tests, guard test host init
 
 ## Affected Files
 
-- `ForeverDiary/Views/Home/HomeView.swift` — iOS (lines 56, 59-63, 116-118, 192-225)
-- `ForeverDiaryMac/Views/Editor/EntryEditorView.swift` — macOS (lines 81, 111-117, 404-427)
-- `ForeverDiary/Services/SyncService.swift` — push-before-pull order (line 266-268)
-
-## Chosen Approach: A + C
-
-### Phase 1: Bug Fix (A + C)
-
-**A — Skip save if text unchanged:**
-- In `saveEntry()` (iOS) and `debounceSave()` (macOS), compare new text with `entry.diaryText` before saving
-- If identical, return early — no `updatedAt` bump, no `syncStatus = "pending"`
-- This directly prevents `onAppear` from creating spurious pending saves
-- Apply the same guard to `locationText` saves
-
-**C — Pull-before-push + cancel debounce on remote update:**
-- Reorder `syncAll()` to run `pullRemote()` before `pushPending()`
-- LWW guards in `upsertEntry()` already prevent overwriting newer local data, so pull-first is safe
-- In `onChange(of: entry?.diaryText)`, cancel `saveTask` and update `diaryText` when remote data arrives (instead of silently skipping)
-- This ensures the UI always reflects the latest data from any device
-
-### Phase 2: Push-Triggered Sync (future)
-
-**APNS silent push notification after a device pushes:**
-- After `pushPending()` succeeds, send a silent push via APNS to other devices
-- Receiving device calls `syncAll()` immediately instead of waiting for the 15s periodic timer
-- Requires: APNS certificate/key in Lambda, device token registration endpoint, `application(_:didReceiveRemoteNotification:)` handler
-- Reduces sync delay from up to 15 seconds to near-instant
-- Scoped as a separate feature — not blocking for the bug fix
-
-## Constraints
-
-- Both iOS and macOS editors must be fixed (same pattern, both affected)
-- Must not break real-time typing — only skip save when text is truly identical
-- `onChange(of: entry?.diaryText)` must still cancel debounce and update UI on remote changes
-- Lessons learned: no `@Attribute(.unique)`, use `ModelContext(container)` in tests, guard test host init
-- Security: no new OWASP surface introduced by reordering push/pull
+- `aws/lambda/index.mjs` — New lightweight change-check handler
+- `ForeverDiary/Services/SyncService.swift` — Polling interval, lightweight check, toast trigger
+- `ForeverDiary/App/ForeverDiaryApp.swift` — Updated periodic sync interval
+- `ForeverDiaryMac/App/ForeverDiaryMacApp.swift` — Same
+- `ForeverDiary/Views/Home/HomeView.swift` — Toast UI (iOS)
+- `ForeverDiaryMac/Views/Editor/EntryEditorView.swift` — Toast UI (macOS)
 
 ## Open Questions
 
-- None for Phase 1
-- Phase 2 (APNS): exact Lambda implementation and device token storage TBD during that planning cycle
+- None — straightforward polling optimization
