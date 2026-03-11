@@ -1,6 +1,6 @@
 import SwiftUI
 import SwiftData
-import PhotosUI
+import UniformTypeIdentifiers
 
 struct EntryEditorView: View {
     let monthDayKey: String
@@ -17,7 +17,6 @@ struct EntryEditorView: View {
     @State private var isCheckInsExpanded = true
 
     // Photos
-    @State private var selectedPhotos: [PhotosPickerItem] = []
     @State private var showPhotoLimitAlert = false
     @State private var showGallery = false
     @State private var galleryStartIndex = 0
@@ -81,14 +80,14 @@ struct EntryEditorView: View {
                             .onChange(of: diaryText) { _, newValue in debounceSave(text: newValue) }
                     }
 
-                    // Photos section
-                    if let entry {
-                        photosSection(entry: entry)
-                    }
-
                     // Check-ins section
                     if let entry {
                         checkInSection(entry: entry)
+                    }
+
+                    // Photos section
+                    if let entry {
+                        photosSection(entry: entry)
                     }
                 }
                 .padding(24)
@@ -117,10 +116,6 @@ struct EntryEditorView: View {
         }
         .onChange(of: entry?.locationText) { _, newLocation in
             locationText = newLocation ?? ""
-        }
-        .onChange(of: selectedPhotos) { _, newItems in
-            guard let entry else { return }
-            Task { await addPhotos(from: newItems, entry: entry) }
         }
         .alert("Photo Limit", isPresented: $showPhotoLimitAlert) {
             Button("OK", role: .cancel) {}
@@ -173,16 +168,14 @@ struct EntryEditorView: View {
                 Spacer()
                 let remaining = max(0, PhotoAsset.maxPhotosPerEntry - sortedPhotos.count)
                 if remaining > 0 {
-                    PhotosPicker(
-                        selection: $selectedPhotos,
-                        maxSelectionCount: remaining,
-                        matching: .images
-                    ) {
+                    Button {
+                        openFilePicker(entry: entry, remaining: remaining)
+                    } label: {
                         Label("Add", systemImage: "plus")
                             .font(.system(.caption, design: .rounded))
                             .foregroundStyle(Color("accentBright"))
                     }
-                    .photosPickerStyle(.presentation)
+                    .buttonStyle(.plain)
                 }
             }
 
@@ -444,7 +437,22 @@ struct EntryEditorView: View {
         syncService.scheduleDebouncedSync()
     }
 
-    private func addPhotos(from items: [PhotosPickerItem], entry: DiaryEntry) async {
+    private func openFilePicker(entry: DiaryEntry, remaining: Int) {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = remaining > 1
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.jpeg, .png, .heic, .tiff, .gif, .bmp, .webP]
+        panel.message = "Choose photos to add to this entry"
+        panel.prompt = "Add Photos"
+        panel.begin { response in
+            guard response == .OK, !panel.urls.isEmpty else { return }
+            let urls = Array(panel.urls.prefix(remaining))
+            Task { await addPhotos(from: urls, entry: entry) }
+        }
+    }
+
+    private func addPhotos(from urls: [URL], entry: DiaryEntry) async {
         let currentCount = entry.safePhotoAssets.count
         let remaining = PhotoAsset.maxPhotosPerEntry - currentCount
         guard remaining > 0 else {
@@ -452,15 +460,10 @@ struct EntryEditorView: View {
             return
         }
 
-        let toProcess = Array(items.prefix(remaining))
-
-        for item in toProcess {
-            guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
+        for url in Array(urls.prefix(remaining)) {
+            guard let data = try? Data(contentsOf: url) else { continue }
             guard let compressed = MacImageHelper.compress(data, maxDimension: 4096, quality: 0.85) else { continue }
-
-            let maxBytes = PhotoAsset.maxPhotoBytes
-            guard compressed.count <= maxBytes else { continue }
-
+            guard compressed.count <= PhotoAsset.maxPhotoBytes else { continue }
             let thumbData = MacImageHelper.thumbnail(data, size: 300, quality: 0.8) ?? compressed
 
             await MainActor.run {
@@ -472,7 +475,6 @@ struct EntryEditorView: View {
         }
 
         await MainActor.run {
-            selectedPhotos = []
             syncService.scheduleDebouncedSync()
         }
     }
