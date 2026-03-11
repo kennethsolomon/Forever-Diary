@@ -1,4 +1,4 @@
-import { DynamoDBClient, BatchWriteItemCommand, QueryCommand } from "@aws-sdk/client-dynamodb";
+import { DynamoDBClient, BatchWriteItemCommand, QueryCommand, UpdateItemCommand } from "@aws-sdk/client-dynamodb";
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectsCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
@@ -43,7 +43,7 @@ export const handler = async (event) => {
   }
 };
 
-// POST /sync — batch upsert or delete items in DynamoDB; optionally delete S3 objects
+// POST /sync — upsert items with LWW or delete items; optionally delete S3 objects
 async function handleSyncPush(userId, body) {
   const { items, deleteS3Keys } = body;
   if (!items || !Array.isArray(items) || items.length === 0) {
@@ -54,63 +54,78 @@ async function handleSyncPush(userId, body) {
     return respond(400, { error: `Maximum ${MAX_ITEMS_PER_REQUEST} items per request` });
   }
 
-  // Limit batch size to 25 (DynamoDB limit)
-  const batches = [];
-  for (let i = 0; i < items.length; i += 25) {
-    batches.push(items.slice(i, i + 25));
-  }
+  const puts = items.filter((i) => i.operation !== "delete");
+  const deletes = items.filter((i) => i.operation === "delete");
 
+  // Upsert with last-write-wins: only accept if incoming updatedAt >= stored updatedAt
   let written = 0;
-  for (const batch of batches) {
-    const requests = batch.map((item) => {
-      if (item.operation === "delete") {
-        return {
-          DeleteRequest: {
-            Key: marshall({ userId, sk: item.sk }),
-          },
-        };
-      }
-      // Strip reserved keys from item.data to prevent partition key overwrite
-      const { userId: _, sk: __, ...safeData } = item.data || {};
-      return {
-        PutRequest: {
-          Item: marshall({
-            userId,
-            sk: item.sk,
-            ...safeData,
-            updatedAt: item.updatedAt || new Date().toISOString(),
-          }),
-        },
-      };
-    });
+  let skipped = 0;
+  for (const item of puts) {
+    const { userId: _, sk: __, ...safeData } = item.data || {};
+    const newUpdatedAt = item.updatedAt || new Date().toISOString();
 
-    const result = await dynamo.send(
-      new BatchWriteItemCommand({
-        RequestItems: { [TABLE]: requests },
-      })
-    );
+    const { updateExpression, conditionExpression, expressionAttributeNames, expressionAttributeValues } =
+      buildUpdateParams(safeData, newUpdatedAt);
 
-    // Retry unprocessed items with exponential backoff
-    let unprocessed = result.UnprocessedItems?.[TABLE] || [];
-    for (let attempt = 1; unprocessed.length > 0 && attempt <= 3; attempt++) {
-      await new Promise((r) => setTimeout(r, 100 * Math.pow(2, attempt)));
-      const retry = await dynamo.send(
-        new BatchWriteItemCommand({
-          RequestItems: { [TABLE]: unprocessed },
+    try {
+      await dynamo.send(
+        new UpdateItemCommand({
+          TableName: TABLE,
+          Key: marshall({ userId, sk: item.sk }),
+          UpdateExpression: updateExpression,
+          ConditionExpression: conditionExpression,
+          ExpressionAttributeNames: expressionAttributeNames,
+          ExpressionAttributeValues: expressionAttributeValues,
         })
       );
-      unprocessed = retry.UnprocessedItems?.[TABLE] || [];
+      written++;
+    } catch (err) {
+      if (err.name === "ConditionalCheckFailedException") {
+        // Server already has a newer version — skip silently; client will reconcile on next pull
+        skipped++;
+      } else {
+        throw err;
+      }
     }
-    if (unprocessed.length > 0) {
-      console.warn(`${unprocessed.length} items unprocessed after retries`);
+  }
+
+  // Hard-delete items (child records, tombstones already pushed as updates above)
+  let deleted = 0;
+  if (deletes.length > 0) {
+    const batches = [];
+    for (let i = 0; i < deletes.length; i += 25) {
+      batches.push(deletes.slice(i, i + 25));
     }
 
-    written += batch.length - unprocessed.length;
+    for (const batch of batches) {
+      const requests = batch.map((item) => ({
+        DeleteRequest: {
+          Key: marshall({ userId, sk: item.sk }),
+        },
+      }));
+
+      const result = await dynamo.send(
+        new BatchWriteItemCommand({ RequestItems: { [TABLE]: requests } })
+      );
+
+      // Retry unprocessed items with exponential backoff
+      let unprocessed = result.UnprocessedItems?.[TABLE] || [];
+      for (let attempt = 1; unprocessed.length > 0 && attempt <= 3; attempt++) {
+        await new Promise((r) => setTimeout(r, 100 * Math.pow(2, attempt)));
+        const retry = await dynamo.send(
+          new BatchWriteItemCommand({ RequestItems: { [TABLE]: unprocessed } })
+        );
+        unprocessed = retry.UnprocessedItems?.[TABLE] || [];
+      }
+      if (unprocessed.length > 0) {
+        console.warn(`${unprocessed.length} delete items unprocessed after retries`);
+      }
+      deleted += batch.length;
+    }
   }
 
   // Delete S3 objects if requested
   if (Array.isArray(deleteS3Keys) && deleteS3Keys.length > 0) {
-    // Scope keys to this user's prefix and batch into groups of 1000 (S3 limit)
     const s3Objects = deleteS3Keys.map((key) => ({
       Key: key.startsWith(`${userId}/`) ? key : `${userId}/${key}`,
     }));
@@ -125,10 +140,11 @@ async function handleSyncPush(userId, body) {
     }
   }
 
-  return respond(200, { written });
+  const serverTime = new Date().toISOString();
+  return respond(200, { written, skipped, deleted, serverTime });
 }
 
-// GET /sync — query items for user, optionally since a timestamp
+// GET /sync — query items for user, optionally since a timestamp; returns server-side timestamp
 async function handleSyncPull(userId, params) {
   const since = params?.since;
   let allItems = [];
@@ -156,7 +172,8 @@ async function handleSyncPull(userId, params) {
     lastKey = result.LastEvaluatedKey;
   } while (lastKey);
 
-  return respond(200, { items: allItems, count: allItems.length });
+  const serverTime = new Date().toISOString();
+  return respond(200, { items: allItems, count: allItems.length, serverTime });
 }
 
 // POST /presign — generate S3 presigned URL for upload or download
@@ -188,6 +205,50 @@ async function handlePresign(userId, body) {
 
   const url = await getSignedUrl(s3, command, { expiresIn: 900 }); // 15 min
   return respond(200, { url, key: fullKey });
+}
+
+// Build UpdateItem expression parts for LWW conditional write.
+// All attribute names are aliased with #f_ prefix to avoid DynamoDB reserved words.
+function buildUpdateParams(data, updatedAt) {
+  const setExpressions = [];
+  const removeExpressions = [];
+  const attrNames = {};
+  const attrValues = {};
+
+  for (const [key, value] of Object.entries(data)) {
+    const nameAlias = `#f_${key}`;
+    const valueAlias = `:v_${key}`;
+    attrNames[nameAlias] = key;
+    attrValues[valueAlias] = value;
+    setExpressions.push(`${nameAlias} = ${valueAlias}`);
+  }
+
+  // updatedAt tracked separately for the condition
+  attrNames["#updatedAt"] = "updatedAt";
+  attrValues[":newUpdatedAt"] = updatedAt;
+  setExpressions.push("#updatedAt = :newUpdatedAt");
+
+  // Remove stale tombstone marker when this is a live (non-deleted) update.
+  // UpdateItem only sets attributes — without this, a prior deletedAt persists
+  // in DynamoDB and causes all subsequent pulls to re-delete the entry.
+  if (!("deletedAt" in data)) {
+    attrNames["#deletedAt"] = "deletedAt";
+    removeExpressions.push("#deletedAt");
+  }
+
+  let updateExpression = `SET ${setExpressions.join(", ")}`;
+  if (removeExpressions.length > 0) {
+    updateExpression += ` REMOVE ${removeExpressions.join(", ")}`;
+  }
+
+  return {
+    updateExpression,
+    // Write only if no record exists yet, or the incoming update is newer/equal
+    conditionExpression:
+      "attribute_not_exists(#updatedAt) OR #updatedAt <= :newUpdatedAt",
+    expressionAttributeNames: attrNames,
+    expressionAttributeValues: marshall(attrValues),
+  };
 }
 
 function respond(statusCode, body) {
