@@ -14,8 +14,8 @@
 | 7 | /commit | done | committed with test file |
 | 8 | /debug | done | fixed date navigation state leak (.id fix), fixed photo size |
 | 9 | /security-check | done | macOS audit — Critical 0, High 0, Medium 0, Low 3 (entitlements over-perm, pre-read size check, photo hard-delete carryover) |
-| 10 | /commit | >> next << | conditional |
-| 11 | /review | not yet | loop |
-| 12 | /commit | not yet | conditional |
-| 13 | /finish-feature | not yet | |
-| 14 | /release | not yet | optional |
+| 10 | /commit | done | committed LWW race fix, actor isolation, scenePhase guard, RFC 3986 URL encoding, lambda deleted counter |
+| 11 | /review | done | clean on attempt 2 — all 3 warnings + 3 nitpicks resolved |
+| 12 | /commit | done | committed review fixes |
+| 13 | /finish-feature | done | PR #3 created — feat/macos-parity-and-lww-sync → main |
+| 14 | /release | >> next << | optional |
