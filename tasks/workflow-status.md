@@ -5,17 +5,17 @@
 
 | # | Step | Status | Notes |
 |---|------|--------|-------|
-| 1 | /brainstorm | done | macOS full iOS parity: colors, photos, analytics, settings CRUD, rich On This Day panel, 3-column layout |
-| 2 | /frontend-design | skipped | user confirmed skip — design direction clear from brainstorm |
-| 3 | /write-plan | done | 10 phases, 40 steps — colors, sidebar, col2 cards, col3 editor, photos, gallery, analytics, settings, sync, build |
-| 4 | /execute-plan | done | all 10 phases complete — colors, editor, photos, gallery, analytics, settings, icon, bug fixes |
-| 5 | /commit | done | multiple commits on main — feat, fix, chore |
-| 6 | /write-tests | done | 13 tests — DiaryEntryDeduplicationTests (completedCheckIns dedupe, uniqueCheckInCount, new model fields) |
-| 7 | /commit | done | committed with test file |
-| 8 | /debug | done | fixed date navigation state leak (.id fix), fixed photo size |
-| 9 | /security-check | done | macOS audit — Critical 0, High 0, Medium 0, Low 3 (entitlements over-perm, pre-read size check, photo hard-delete carryover) |
-| 10 | /commit | done | committed LWW race fix, actor isolation, scenePhase guard, RFC 3986 URL encoding, lambda deleted counter |
-| 11 | /review | done | clean on attempt 2 — all 3 warnings + 3 nitpicks resolved |
-| 12 | /commit | done | committed review fixes |
-| 13 | /finish-feature | done | PR #3 created — feat/macos-parity-and-lww-sync → main |
-| 14 | /release | >> next << | optional |
+| 1 | /brainstorm | done | offline-first fix: remove signOut() from refreshIfNeeded() + NWPathMonitor reachability guard |
+| 2 | /frontend-design | skipped | logic-only fix, no new UI |
+| 3 | /write-plan | done | 11 steps, 4 phases — NetworkMonitor service, refreshIfNeeded fix, iOS+macOS wiring, offline UI badges |
+| 4 | /execute-plan | done | 11 steps complete — NetworkMonitor service, auth fix, iOS+macOS wiring; both targets BUILD SUCCEEDED |
+| 5 | /commit | done | feat: NetworkMonitor + CognitoAuthService offline fix |
+| 6 | /write-tests | done | 9 NetworkMonitor tests + CloudSyncServiceTests fix; 98/98 passing |
+| 7 | /commit | done | test: add NetworkMonitor tests and fix SyncService init |
+| 8 | /debug | skipped | no bugs found during security-check/review |
+| 9 | /security-check | done | Critical 0, High 0, Medium 0, Low 3 (macOS force-unwrap, TOCTOU window, revoked token tradeoff) |
+| 10 | /commit | skipped | security-check was clean (Low findings accepted) |
+| 11 | /review | done | clean — 0 Critical, 0 Warning, 3 Nitpicks (env propagation, test flakiness note, default comment) |
+| 12 | /commit | >> next << | conditional — fix nitpicks first or skip if not fixing |
+| 13 | /finish-feature | not yet | |
+| 14 | /release | not yet | optional |

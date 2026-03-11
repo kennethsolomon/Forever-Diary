@@ -9,6 +9,7 @@ struct EntryEditorView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(SyncService.self) private var syncService
+    @Environment(NetworkMonitor.self) private var networkMonitor
 
     @State private var diaryText = ""
     @State private var locationText = ""
@@ -102,7 +103,8 @@ struct EntryEditorView: View {
             ToolbarItem(placement: .primaryAction) {
                 SyncStatusView(
                     isSyncing: syncService.isSyncing,
-                    hasError: syncService.lastError != nil
+                    hasError: syncService.lastError != nil,
+                    isConnected: networkMonitor.isConnected
                 )
             }
         }

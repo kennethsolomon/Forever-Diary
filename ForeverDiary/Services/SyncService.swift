@@ -15,6 +15,7 @@ final class SyncService {
     private let apiClient: APIClient
     private let authService: CognitoAuthService
     private let container: ModelContainer
+    private let networkMonitor: NetworkMonitor
 
     private let lastSyncKey = "lastSyncTimestamp"
     private var syncDebounceTask: Task<Void, Never>?
@@ -24,10 +25,11 @@ final class SyncService {
         ISO8601DateFormatter()
     }()
 
-    init(apiClient: APIClient, authService: CognitoAuthService, container: ModelContainer) {
+    init(apiClient: APIClient, authService: CognitoAuthService, container: ModelContainer, networkMonitor: NetworkMonitor) {
         self.apiClient = apiClient
         self.authService = authService
         self.container = container
+        self.networkMonitor = networkMonitor
         self.lastSyncDate = loadLastSyncDate()
     }
 
@@ -254,6 +256,7 @@ final class SyncService {
 
     /// Full sync: push pending, pull remote, sync photos.
     func syncAll() async {
+        guard networkMonitor.isConnected else { return }
         guard !isSyncing else { return }
         isSyncing = true
         lastError = nil

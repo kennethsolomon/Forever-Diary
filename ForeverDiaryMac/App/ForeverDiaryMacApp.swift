@@ -7,6 +7,7 @@ struct ForeverDiaryMacApp: App {
     let cognitoAuth: CognitoAuthService
     let googleAuth: GoogleAuthService
     let syncService: SyncService
+    let networkMonitor: NetworkMonitor
 
     init() {
         let schema = Schema([
@@ -34,9 +35,12 @@ struct ForeverDiaryMacApp: App {
 
         let auth = CognitoAuthService()
         let api = APIClient(authService: auth)
+        let monitor = NetworkMonitor()
+        monitor.start()
         cognitoAuth = auth
         googleAuth = GoogleAuthService()
-        syncService = SyncService(apiClient: api, authService: auth, container: resolvedContainer)
+        networkMonitor = monitor
+        syncService = SyncService(apiClient: api, authService: auth, container: resolvedContainer, networkMonitor: monitor)
     }
 
     var body: some Scene {
@@ -45,6 +49,7 @@ struct ForeverDiaryMacApp: App {
                 .environment(syncService)
                 .environment(cognitoAuth)
                 .environment(googleAuth)
+                .environment(networkMonitor)
         }
         .modelContainer(container)
         .commands {
@@ -60,6 +65,7 @@ struct ForeverDiaryMacApp: App {
             SettingsMacView()
                 .environment(syncService)
                 .environment(cognitoAuth)
+                .environment(networkMonitor)
                 .modelContainer(container)
         }
     }

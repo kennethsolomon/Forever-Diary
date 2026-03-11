@@ -450,6 +450,68 @@ _None found._
 
 ---
 
+# Security Audit — 2026-03-11 (Offline-First Auth Fix)
+
+**Scope:** Changed files on branch `feat/macos-parity-and-lww-sync` (offline fix batch)
+**Stack:** Swift / SwiftUI (iOS 17+ / macOS 14+) + Network.framework
+**Files audited:** 10 (NetworkMonitor.swift, CognitoAuthService.swift, SyncService.swift, ForeverDiaryApp.swift, ForeverDiaryMacApp.swift, SettingsView.swift, SettingsMacView.swift, SyncStatusView.swift, EntryEditorView.swift, project.yml)
+
+## Critical (must fix before deploy)
+
+_None found._
+
+## High (fix before production)
+
+_None found._
+
+## Medium (should fix)
+
+_None found._
+
+## Low / Informational
+
+- **[ForeverDiaryMacApp.swift:31]** Force-unwrap on in-memory fallback container with no descriptive error
+  **Standard:** CWE-248 — Uncaught Exception
+  **Risk:** `(try? ModelContainer(for: schema, configurations: memConfig))!` — if both the local-disk and in-memory container creations fail (e.g., schema incompatibility after an update), the app crashes with a bare force-unwrap trap and no diagnostic message. Equivalent issue on iOS was flagged High and fixed (`do/catch + fatalError("...")`). macOS path was missed in the prior macOS audit.
+  **Recommendation:** Replace with `do/catch` + `fatalError("Failed to create macOS ModelContainer: \(error)")` for consistent, descriptive crash handling.
+
+- **[NetworkMonitor.swift:6]** `isConnected` defaults to `true` before first `NWPathMonitor` path update
+  **Standard:** CWE-362 — TOCTOU (Time-of-Check to Time-of-Use)
+  **Risk:** On app launch, `isConnected` is `true` until `NWPathMonitor` fires its first path update (async dispatch to main queue). If the device is offline when the app launches, there is a brief window where `syncAll()` believes it is connected and proceeds to call `refreshIfNeeded()`. In practice this is mitigated by the 2-second `Task.sleep` in `startSync()`, which gives `NWPathMonitor` time to fire its initial update. Low real-world risk.
+  **Recommendation:** No action required — mitigated by startup delay. Documented for awareness.
+
+- **[CognitoAuthService.swift:219-220]** Revoked Cognito tokens no longer trigger automatic sign-out
+  **Standard:** Informational — accepted design tradeoff (CWE-613 Insufficient Session Expiration)
+  **Risk:** The `signOut()` call was intentionally removed so offline users are not ejected from the app. A consequence is that definitively revoked tokens (e.g., admin-forced sign-out from Cognito console) will not automatically sign the user out — they will stay in the app and see sync errors (`lastError`) until they manually sign out. For a personal diary app with no shared credentials or enterprise use, this is acceptable.
+  **Recommendation:** Accepted tradeoff. If enterprise/multi-user scenarios arise in future, consider parsing HTTP 401/403 response codes from Cognito and calling `signOut()` only on definitive auth rejection.
+
+## Passed Checks
+
+- **A01 Broken Access Control** — `NetworkMonitor.isConnected` is a boolean used only as a sync gate; no auth decisions made from it. Offline entries use existing `syncStatus = "pending"` path — no new data access paths.
+- **A02 Cryptographic Failures** — No new cryptographic operations. `NWPathMonitor` is a system framework that does not expose crypto.
+- **A03 Injection** — No user input flows through `NetworkMonitor`. `path.status == .satisfied` is a system enum comparison — no injection surface.
+- **A04 Insecure Design** — `syncAll()` offline guard silently skips sync (no error set, no retry storm). Pending entries accumulate correctly in SwiftData and push on next connected sync.
+- **A05 Security Misconfiguration** — `Network.framework` added to macOS target via `project.yml` — standard system framework, no sandbox impact. macOS entitlement `com.apple.security.network.client` already present.
+- **A06 Vulnerable Components** — No new third-party dependencies. `Network.framework` is an Apple system framework.
+- **A07 Auth Failures** — Offline users authenticated via Keychain (`identityId` + `userEmail`) — intentional design. Keychain state unchanged by this PR.
+- **A08 Data Integrity** — Offline writes use existing `syncStatus = "pending"` path. No new serialization or deserialization introduced.
+- **A09 Logging** — `NetworkMonitor` has no `print` statements. No PII in new code paths. `isConnected` bool is not sensitive.
+- **A10 SSRF** — No new outbound URLs. `NWPathMonitor` monitors system network paths — no user-controlled URLs.
+- **Thread Safety** — `NWPathMonitor` callback dispatches to `DispatchQueue.main` before updating `@Observable` property — correct for SwiftUI observation.
+- **Test Files** — `NetworkMonitorTests.swift` and `CloudSyncServiceTests.swift` changes contain no secrets, no PII, no network calls.
+
+## Summary
+
+| Severity | Count |
+|----------|-------|
+| Critical | 0 |
+| High     | 0 |
+| Medium   | 0 |
+| Low      | 3 |
+| **Total** | **3** |
+
+---
+
 # Security Audit — 2026-03-10 (Calendar Navigation Fix)
 
 **Scope:** Changed files on branch `fix/calendar-navigation-freeze`

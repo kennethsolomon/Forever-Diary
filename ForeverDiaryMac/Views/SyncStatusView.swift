@@ -3,20 +3,24 @@ import SwiftUI
 struct SyncStatusView: View {
     let isSyncing: Bool
     let hasError: Bool
+    let isConnected: Bool
 
     private var icon: String {
+        if !isConnected { return "wifi.slash" }
         if isSyncing { return "arrow.triangle.2.circlepath.icloud.fill" }
         if hasError  { return "exclamationmark.icloud.fill" }
         return "checkmark.icloud.fill"
     }
 
     private var label: String {
+        if !isConnected { return "Offline" }
         if isSyncing { return "Syncing" }
         if hasError  { return "Sync error" }
         return "Synced"
     }
 
     private var tint: Color {
+        if !isConnected { return Color("textSecondary") }
         if hasError  { return Color("destructive") }
         if isSyncing { return Color("accentBright") }
         return Color("textSecondary")
@@ -44,5 +48,6 @@ struct SyncStatusView: View {
         )
         .animation(.easeInOut(duration: 0.25), value: isSyncing)
         .animation(.easeInOut(duration: 0.25), value: hasError)
+        .animation(.easeInOut(duration: 0.25), value: isConnected)
     }
 }

@@ -1,30 +1,47 @@
-# Forever Diary — macOS Full iOS Parity Rebuild
+# Forever Diary — Offline-First Auth Fix
 
 ## Problem Statement
-The macOS app was ~40% feature-complete. Missing: real analytics, photos, custom color palette, rich "On This Day" entry panel, full settings with habit CRUD, and photo gallery. The user wants full iOS feature parity adapted for a 3-column Mac desktop layout.
+
+When the device has no internet connection, the app redirects the user to the login screen instead of staying open. This happens on both iOS and macOS. The app should be usable offline — the user should be able to read and write diary entries with sync deferred until connectivity returns.
+
+## Root Cause
+
+`CognitoAuthService.refreshIfNeeded()` (line 220) unconditionally calls `signOut()` when all credential refresh network calls fail. A network timeout is not an auth failure — but the code treats them identically.
+
+Flow:
+1. App launches → Keychain has `identityId` + `userEmail` → `isAuthenticated = true`
+2. `startSync()` → `syncAll()` → `refreshIfNeeded()`
+3. All 4 refresh paths fail (no network) → `signOut()` → `isAuthenticated = false`
+4. App shows `SignInView` — wrong
 
 ## Key Decisions
 
-1. **Same 10 iOS colorsets** copied verbatim into `ForeverDiaryMac/Assets.xcassets/Colors/` — all views use `Color("name")`, no raw `NSColor.*`
-2. **3-column layout confirmed**:
-   - Column 1 (~170px): Compact month mini-calendar sidebar
-   - Column 2 (~300px): Rich "On This Day" year cards (text preview + photo thumbnails + check-in badge + location)
-   - Column 3 (remaining): Full entry editor — diary text + location + photos + check-ins
-3. **Photos**: `PhotosPicker` from `PhotosUI` (macOS 14+, same API as iOS) with `NSImage`-based compression pipeline (NSBitmapImageRep JPEG). Max 10 photos, 4096px resize, 0.85 quality, 300px thumbnail.
-4. **Photo gallery**: Dark `.sheet` presentation with `TabView(.page)`, pinch-zoom, X close button (no drag-to-dismiss on macOS).
-5. **Analytics**: Full port of iOS `AnalyticsView` — period picker, streak cards, completion gauge, per-habit progress bars. Opens as `.sheet` from sidebar Analytics button.
-6. **Settings**: 4-tab macOS settings window (⌘,): Account | Appearance | Habits | Sync. Habits tab has full CRUD with drag-to-reorder, delete, and edit sheet.
-7. **One pass**: All features implemented together, not incrementally.
+1. **Fix A: Remove `signOut()` from `refreshIfNeeded()`**
+   - When all credential refresh attempts fail, return without signing out
+   - `credentials` stays nil; sync calls will throw and be caught by `syncAll()`'s catch block
+   - `isAuthenticated` stays true (Keychain still valid)
+   - Sign-out should only happen on explicit user action or definitive HTTP 401/403 from Cognito
+
+2. **Fix C: Add `NWPathMonitor` reachability guard**
+   - Wrap `Network.framework` in a lightweight `NetworkMonitor` observable
+   - In `syncAll()`, skip the entire sync when offline (no `refreshIfNeeded()` call, no network I/O)
+   - Expose `isConnected: Bool` so the Settings sync status row can show an "Offline" badge
+   - `NWPathMonitor` starts on app foreground, stops on background (tied to `scenePhase`)
 
 ## Chosen Approach
-Port iOS features 1:1 adapted for Mac 3-column split view. Rewrite all macOS views; no iOS files touched.
 
-## Constraints (from lessons.md)
-- No `@Attribute(.unique)` on SwiftData models
-- macOS target uses local-only SwiftData (no CloudKit)
-- All colors via `Color("name")` asset catalog
-- `preferredColorScheme` applied at WindowGroup root from AppStorage
+**A + C combined:**
+- A is the defensive root fix (correct behavior even without C)
+- C adds proper offline UX and prevents unnecessary network attempts
+
+## Constraints
+
+- `Network.framework` must be added to both iOS and macOS targets in `project.yml`
+- `NetworkMonitor` should use `@Observable` to match existing service pattern
+- The "Offline" indicator lives in Settings sync status row — no new UI component needed elsewhere
+- Sync queue (pending entries) must NOT be lost — only skipped until connectivity returns
+- No changes to SwiftData models or DynamoDB schema
 
 ## Open Questions
-- Confirm `PhotosUI` framework is added to macOS target in `project.yml`
-- Confirm `SyncService.deleteTemplate()` soft-delete exists or needs adding
+
+- None — approach is clear

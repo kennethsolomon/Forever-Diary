@@ -51,6 +51,8 @@ targets:
     dependencies:
       - sdk: PhotosUI.framework
         embed: false
+      - sdk: Network.framework
+        embed: false
     sources:
       - path: ForeverDiaryMac
         excludes:

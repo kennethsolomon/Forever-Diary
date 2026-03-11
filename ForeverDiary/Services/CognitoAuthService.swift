@@ -216,8 +216,8 @@ final class CognitoAuthService {
             }
         }
 
-        // All refresh paths failed — sign out
-        signOut()
+        // Network unavailable — stay authenticated, sync will retry when connectivity returns
+        return
     }
 
     private func refreshGoogleIdToken(refreshToken: String) async throws -> String {

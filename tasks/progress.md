@@ -1,5 +1,21 @@
 # Progress Log
 
+## Session: 2026-03-11 — Offline-First Auth Fix
+
+### Work Log
+- Created `ForeverDiary/Services/NetworkMonitor.swift` — `@Observable` NWPathMonitor wrapper, `isConnected: Bool`, `start()`/`stop()`
+- Added `Network.framework` to macOS target in `project.yml`; ran `xcodegen generate` — succeeded
+- Fixed `CognitoAuthService.refreshIfNeeded()` — removed `signOut()` at line 220, replaced with `return`
+- Injected `NetworkMonitor` into `SyncService.init()`; added `guard networkMonitor.isConnected` at top of `syncAll()`
+- Updated `ForeverDiaryApp.swift` — instantiated `NetworkMonitor`, start on `.active`, stop on `.background`, environment-injected into `ContentView`
+- Updated iOS `SettingsView` — added `@Environment(NetworkMonitor.self)`, "Offline" badge, Sync Now button disabled when offline
+- Updated `ForeverDiaryMacApp.swift` — instantiated `NetworkMonitor`, `monitor.start()` in init, environment-injected into both scenes
+- Updated `SyncStatusView.swift` — added `isConnected: Bool` param, offline icon/label/tint
+- Updated `EntryEditorView.swift` — added `@Environment(NetworkMonitor.self)`, passed `isConnected` to `SyncStatusView`
+- Updated `SettingsMacView` `SyncTab` — added `@Environment(NetworkMonitor.self)`, offline state, disabled Sync Now button
+- Built iOS (iPhone 16e simulator): BUILD SUCCEEDED
+- Built macOS: BUILD SUCCEEDED
+
 ## Session: 2026-03-10
 - Started: 00:45
 - Summary:
