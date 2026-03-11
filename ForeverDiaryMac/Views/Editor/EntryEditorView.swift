@@ -113,8 +113,9 @@ struct EntryEditorView: View {
             locationText = entry?.locationText ?? ""
         }
         .onChange(of: entry?.diaryText) { _, newText in
-            // Only sync from model if no local edit is in flight
-            guard saveTask == nil else { return }
+            // Cancel any in-flight debounce so remote data takes priority
+            saveTask?.cancel()
+            saveTask = nil
             let incoming = newText ?? ""
             if incoming != diaryText { diaryText = incoming }
         }
@@ -408,6 +409,7 @@ struct EntryEditorView: View {
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 let e = ensureEntry()
+                guard text != e.diaryText else { saveTask = nil; return }
                 e.diaryText = text
                 e.updatedAt = .now
                 e.syncStatus = SyncStatus.pending
@@ -435,7 +437,9 @@ struct EntryEditorView: View {
 
     private func saveLocation() {
         guard let entry else { return }
-        entry.locationText = locationText.isEmpty ? nil : locationText
+        let newLocation = locationText.isEmpty ? nil : locationText
+        guard newLocation != entry.locationText else { return }
+        entry.locationText = newLocation
         entry.updatedAt = .now
         entry.syncStatus = SyncStatus.pending
         try? modelContext.save()
