@@ -37,14 +37,16 @@ struct SettingsView: View {
                     template.label = label
                     template.type = type
                     template.isActive = isActive
+                    template.updatedAt = .now
+                    template.syncStatus = SyncStatus.pending
                     try? modelContext.save()
+                    syncService.scheduleDebouncedSync()
                 }
             }
             .alert("Delete Template?", isPresented: $showDeleteAlert) {
                 Button("Delete", role: .destructive) {
                     if let templateToDelete {
-                        modelContext.delete(templateToDelete)
-                        try? modelContext.save()
+                        Task { await syncService.deleteTemplate(templateToDelete, context: modelContext) }
                     }
                 }
                 Button("Cancel", role: .cancel) {}
@@ -254,15 +256,20 @@ struct SettingsView: View {
         let template = CheckInTemplate(label: label, type: type, isActive: isActive, sortOrder: maxOrder + 1)
         modelContext.insert(template)
         try? modelContext.save()
+        syncService.scheduleDebouncedSync()
     }
 
     private func reorderTemplates(from source: IndexSet, to destination: Int) {
         var ordered = templates.sorted { $0.sortOrder < $1.sortOrder }
         ordered.move(fromOffsets: source, toOffset: destination)
+        let now = Date.now
         for (index, template) in ordered.enumerated() {
             template.sortOrder = index
+            template.updatedAt = now
+            template.syncStatus = SyncStatus.pending
         }
         try? modelContext.save()
+        syncService.scheduleDebouncedSync()
     }
 
     private func deleteTemplates(at offsets: IndexSet) {

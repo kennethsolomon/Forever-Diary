@@ -8,7 +8,6 @@ struct HomeView: View {
     @State private var diaryText = ""
     @State private var showSavedIndicator = false
     @State private var saveTask: Task<Void, Never>?
-    @State private var entry: DiaryEntry?
     @State private var showLocationEditor = false
     @State private var showPhotoPicker = false
 
@@ -16,9 +15,18 @@ struct HomeView: View {
     private var todayKey: String { DiaryEntry.monthDayKey(from: today) }
     private var todayYear: Int { DiaryEntry.year(from: today) }
 
+    @Query private var todayEntries: [DiaryEntry]
     @Query private var templates: [CheckInTemplate]
 
+    private var entry: DiaryEntry? { todayEntries.first }
+
     init() {
+        let now = Date.now
+        let key = DiaryEntry.monthDayKey(from: now)
+        let year = DiaryEntry.year(from: now)
+        _todayEntries = Query(
+            filter: #Predicate<DiaryEntry> { $0.monthDayKey == key && $0.year == year && $0.deletedAt == nil }
+        )
         let sortOrder = SortDescriptor<CheckInTemplate>(\.sortOrder)
         _templates = Query(filter: #Predicate<CheckInTemplate> { $0.isActive }, sort: [sortOrder])
     }
@@ -44,7 +52,15 @@ struct HomeView: View {
                     .padding(.bottom, 8)
             }
             .background(Color("backgroundPrimary"))
-            .onAppear(perform: loadTodayEntry)
+            .onAppear {
+                diaryText = entry?.diaryText ?? ""
+                isTextEditorFocused = true
+            }
+            .onChange(of: entry?.diaryText) { _, newText in
+                // Sync diary text from remote only when not mid-save
+                guard saveTask == nil else { return }
+                diaryText = newText ?? ""
+            }
         }
     }
 
@@ -99,9 +115,6 @@ struct HomeView: View {
                 .scrollDismissesKeyboard(.interactively)
                 .onChange(of: diaryText) { _, newValue in
                     debounceSave(text: newValue)
-                }
-                .onAppear {
-                    isTextEditorFocused = true
                 }
         }
     }
@@ -165,16 +178,6 @@ struct HomeView: View {
 
     // MARK: - Data
 
-    private func loadTodayEntry() {
-        let key = todayKey
-        let year = todayYear
-        let descriptor = FetchDescriptor<DiaryEntry>(
-            predicate: #Predicate { $0.monthDayKey == key && $0.year == year && $0.deletedAt == nil }
-        )
-        entry = try? modelContext.fetch(descriptor).first
-        diaryText = entry?.diaryText ?? ""
-    }
-
     private func debounceSave(text: String) {
         saveTask?.cancel()
         saveTask = Task {
@@ -200,7 +203,6 @@ struct HomeView: View {
             )
             newEntry.diaryText = text
             modelContext.insert(newEntry)
-            self.entry = newEntry
         }
 
         do {
@@ -227,6 +229,8 @@ struct HomeView: View {
 
 private struct LocationEditSheet: View {
     let entry: DiaryEntry?
+    @Environment(\.modelContext) private var modelContext
+    @Environment(SyncService.self) private var syncService
     @Environment(\.dismiss) private var dismiss
     @State private var locationText = ""
 
@@ -243,7 +247,13 @@ private struct LocationEditSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        entry?.locationText = locationText.isEmpty ? nil : locationText
+                        if let entry {
+                            entry.locationText = locationText.isEmpty ? nil : locationText
+                            entry.updatedAt = .now
+                            entry.syncStatus = SyncStatus.pending
+                            try? modelContext.save()
+                            syncService.scheduleDebouncedSync()
+                        }
                         dismiss()
                     }
                 }

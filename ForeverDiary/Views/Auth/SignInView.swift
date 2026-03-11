@@ -210,7 +210,7 @@ private struct SignInForm: View {
         }
         do {
             let credential = try await googleAuth.signIn()
-            try await cognitoAuth.signInWithGoogle(idToken: credential.idToken, email: credential.email)
+            try await cognitoAuth.signInWithGoogle(idToken: credential.idToken, refreshToken: credential.refreshToken, email: credential.email)
         } catch let error as GoogleAuthService.GoogleAuthError where error == .cancelled {
             await MainActor.run { isLoading = false }
         } catch {
@@ -326,7 +326,7 @@ private struct CreateAccountForm: View {
         }
         do {
             let credential = try await googleAuth.signIn()
-            try await cognitoAuth.signInWithGoogle(idToken: credential.idToken, email: credential.email)
+            try await cognitoAuth.signInWithGoogle(idToken: credential.idToken, refreshToken: credential.refreshToken, email: credential.email)
         } catch let error as GoogleAuthService.GoogleAuthError where error == .cancelled {
             await MainActor.run { isLoading = false }
         } catch {

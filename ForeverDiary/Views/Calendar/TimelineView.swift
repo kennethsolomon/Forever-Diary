@@ -236,7 +236,7 @@ struct YearSummaryCard: View {
                         .foregroundStyle(Color("textSecondary"))
                 }
 
-                let total = entry.safeCheckInValues.count
+                let total = entry.uniqueCheckInCount
                 if total > 0 {
                     Label(
                         "\(entry.completedCheckIns)/\(total)",
