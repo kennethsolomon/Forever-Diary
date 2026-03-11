@@ -1,188 +1,212 @@
-# UI Polish + Sign in with Apple
+# macOS App — Full iOS Feature Parity
 
 ## Goal
-Four improvements: remove the view/write mode toggle, build a paginated photo gallery viewer, redesign calendar day cells as stacked photo cards, and add Sign in with Apple authentication with per-account data isolation.
+Rebuild the macOS `ForeverDiaryMac` app to full iOS feature parity in one pass: correct colors, rich "On This Day" entry list, full entry editor with photos + check-ins, real analytics, and complete settings with habit management.
 
 ## Lessons Applied
 - No `@Attribute(.unique)` on any SwiftData model fields
-- Tests use `ModelContext(container)`, not `container.mainContext`
-- Test host guard skips CloudKit AND auth services (extend guard to AppleAuthService/CognitoAuthService init)
-- Test host guard: `NSClassFromString("XCTestCase") != nil`
+- No CloudKit configuration in macOS target (uses local-only SwiftData)
+- `PhotosPicker` from `PhotosUI` IS available on macOS 14+ (same API as iOS)
+- macOS uses `NSImage` not `UIImage`; compress via `NSBitmapImageRep`
+- `fullScreenCover` not available on macOS — use `.sheet` for photo gallery
+- All colors: `Color("colorName")` from Assets, never raw `NSColor.*`
+- `preferredColorScheme` applies at window root (WindowGroup body)
 
 ---
 
-## Phase 1: Remove View/Write Mode Toggle (Feature A)
+## Phase 1: Copy iOS Color Assets to macOS
 
-- [x] 1.1 Remove from `HomeView.swift`: `@State private var isViewMode`, toolbar `Button` (eye/pencil icon), `MarkdownTextView` branch in `textEditor`, and the `isViewMode`/`isTextEditorFocused` coupling in the toolbar action
-- [x] 1.2 Remove from `EntryDetailView.swift`: `@State private var isViewMode`, `@FocusState private var isDiaryFocused`, toolbar `Button`, `MarkdownTextView` branch in `diarySection`, and the focus-toggle side effects
-- [x] 1.3 Delete `ForeverDiary/Views/Components/MarkdownTextView.swift`
-- [x] 1.4 Delete `ForeverDiaryTests/MarkdownTests.swift`
-- [x] 1.5 Build succeeds — `xcodebuild build`
-
----
-
-## Phase 2: Calendar Day Cards + Stacked Display (Feature C)
-
-- [x] 2.1 In `CalendarBrowserView.swift` — update `DayCell` aspect ratio from `aspectRatio(1)` to `aspectRatio(3/4, contentMode: .fit)` (portrait card)
-- [x] 2.2 Replace all `Circle()` and `clipShape(Circle())` in `DayCell` with `RoundedRectangle(cornerRadius: 8)` and `clipShape(RoundedRectangle(cornerRadius: 8))`
-- [x] 2.3 **No-photo single entry:** Card bg = `surfaceCard` at 0.5 opacity, day number centered, `textSecondary`; today variant: full `surfaceCard` bg with 1.5px teal border + teal bold day number
-- [x] 2.4 **Single photo:** Photo fills card via `.scaledToFill()` + `.clipShape(RoundedRectangle)`, day number bottom-left in white `.caption` bold with drop shadow
-- [x] 2.5 **Stacked deck (2+ entries OR 3+ photos):** `ZStack(alignment: .top)` with:
-  - Card 3 (bottom): `RoundedRectangle.fill(surfaceCard).opacity(0.5)`, `rotationEffect(.degrees(2.5))`, `offset(y: 8)`
-  - Card 2 (middle): `RoundedRectangle.fill(surfaceCard).opacity(0.75)`, `rotationEffect(.degrees(-1.5))`, `offset(y: 4)`
-  - Card 1 (top): 0° rotation, 0 offset, photo or surfaceCard fill, day number bottom-left
-  - Entire `ZStack` wrapped in `.padding(.bottom, 10)` to reserve space for peek
-- [x] 2.6 Count badge: 16×16 teal circle, white `.system(size: 9, weight: .bold)`, pinned `.topTrailing` at `offset(x: 3, y: -3)` — shown when `(totalEntries > 1 || totalPhotoCount > 3)` — displays `totalEntries` count
-- [x] 2.7 Update `LazyVGrid` grid spacing from `spacing: 4` to `spacing: 3`
-- [x] 2.8 Build succeeds — `xcodebuild build`
+- [ ] 1.1 Create `ForeverDiaryMac/Assets.xcassets/Colors/` directory structure with 10 colorsets matching iOS exactly:
+  - `accentBright` (teal: R0 G173 B181, same light+dark)
+  - `backgroundPrimary` (light: white; dark: R34 G40 B49)
+  - `surfaceCard` (light: R245 G246 B248; dark: R57 G62 B70)
+  - `textPrimary` (light: R34 G40 B49; dark: R238 G238 B238)
+  - `textSecondary` (light: R107 G114 B128; dark: R158 G164 B171)
+  - `habitComplete` (green: R107 G191 B138, same light+dark)
+  - `destructive` (red: R232 G93 B93, same light+dark)
+  - `accentSlate` (copy from iOS Assets)
+  - `borderSubtle` (copy from iOS Assets)
+- [ ] 1.2 Verify: `Color("backgroundPrimary")` resolves in macOS Simulator without error
 
 ---
 
-## Phase 3: Photo Gallery Viewer (Feature B)
+## Phase 2: App Entry Point — Theme & Window Background
 
-- [x] 3.1 Create `ForeverDiary/Views/Components/PhotoGalleryView.swift`:
-  - State: `@State private var currentIndex: Int`, `@State private var dragOffset: CGSize`, `@State private var dragOpacity: Double = 1.0`, `@State private var scale: CGFloat = 1.0`
-  - Input: `photos: [PhotoAsset]`, `startIndex: Int`
-  - `@Environment(\.dismiss) private var dismiss`
-- [x] 3.2 Full-screen ZStack on black bg (`.ignoresSafeArea()`):
-  - `TabView(selection: $currentIndex) { ForEach(photos) { ... } }.tabViewStyle(.page(indexDisplayMode: .never))`
-  - Each page: `Image(uiImage: ...).resizable().scaledToFit()` — NO `.ignoresSafeArea()` on image — centered in screen
-- [x] 3.3 Overlay controls (not inside TabView):
-  - Top-left: X close button — `"xmark"` in a 36×36 `Color.white.opacity(0.15)` circle, padding 16 from safe area — `Button { dismiss() }`
-  - Top-right: counter `"\(currentIndex + 1) / \(photos.count)"` — `.caption`, white, padding 16
-  - Bottom: pagination dots — `ForEach(photos.indices)` → circle 6px, teal if current, `white.opacity(0.3)` otherwise
-- [x] 3.4 Swipe-down-to-dismiss: `DragGesture` on outer ZStack → `dragOffset = value.translation` when height > 0; `dragOpacity = max(0, 1 - (dragOffset.height / 250))`; on ended: if height > 80 → dismiss, else spring-reset offset + opacity
-- [x] 3.5 Pinch-to-zoom per photo: `MagnificationGesture` → `scale = value.clamped(1.0, 4.0)`; double-tap → `withAnimation { scale = 1.0 }`. Apply `scaleEffect(scale)` to the image
-- [x] 3.6 Update `EntryDetailView.swift`:
-  - Replace `@State private var fullScreenPhoto: PhotoAsset?` with `@State private var galleryStartIndex: Int?`
-  - Replace `.fullScreenCover(item: $fullScreenPhoto)` with `.fullScreenCover(isPresented: Binding(get: { galleryStartIndex != nil }, set: { if !$0 { galleryStartIndex = nil } })) { PhotoGalleryView(photos: sortedPhotos, startIndex: galleryStartIndex ?? 0) }`
-  - On thumbnail tap: `galleryStartIndex = index` (use `enumerated()` to get index)
-  - Extract `sortedPhotos` as a computed property: `entry?.safePhotoAssets.sorted(by: { $0.createdAt < $1.createdAt }) ?? []`
-  - Delete `PhotoFullScreenView` struct at bottom of file
-- [x] 3.7 Update `TimelineView.swift` — `YearSummaryCard`:
-  - Add `@State private var galleryStartIndex: Int?` to `YearSummaryCard`
-  - Increase thumbnail size from 40×40 to 64×64 (both width and height)
-  - Wrap each thumbnail `Image` in a `Button` that sets `galleryStartIndex = index`
-  - Add `.fullScreenCover(isPresented:) { PhotoGalleryView(photos: sortedPhotos, startIndex: ...) }` to `YearSummaryCard`
-- [x] 3.8 Build succeeds — `xcodebuild build`
+- [ ] 2.1 In `ForeverDiaryMacApp.swift`: add `@AppStorage("appTheme") var appTheme: String = AppTheme.system.rawValue` and apply `.preferredColorScheme(AppTheme(rawValue: appTheme)?.colorScheme ?? nil)` to the WindowGroup root
+- [ ] 2.2 Apply `.background(Color("backgroundPrimary"))` to `MainWindowView` root container
 
 ---
 
-## Phase 4: Sign in with Apple + Account System (Feature D)
+## Phase 3: Sidebar Color Fixes (CalendarSidebarView)
 
-- [x] 4.1 Add Sign in with Apple entitlement to `ForeverDiary/ForeverDiary.entitlements`:
-  ```xml
-  <key>com.apple.developer.applesignin</key>
-  <array><string>Default</string></array>
-  ```
-- [x] 4.2 Create `ForeverDiary/Services/AppleAuthService.swift`:
-  - `import AuthenticationServices`
-  - `@Observable final class AppleAuthService: NSObject, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding`
-  - `func signIn() async throws -> (identityToken: String, fullName: String?, email: String?)` — uses `ASAuthorizationAppleIDProvider`, wraps delegate callbacks in `CheckedContinuation`
-  - `presentationAnchor` returns the key window
-- [x] 4.3 Update `ForeverDiary/Services/CognitoAuthService.swift`:
-  - Add `private(set) var isAuthenticatedWithApple = false` state
-  - Add `func authenticateWithApple(identityToken: String, displayName: String?) async throws -> String` method:
-    - Builds `Logins: ["appleid.apple.com": identityToken]`
-    - Calls `getOrCreateIdentity(logins:)` — updated to accept optional logins dict
-    - Calls `getCredentials(identityId:logins:)` — passes logins for authenticated flow
-    - Stores identityId in Keychain, sets `isAuthenticated = true`, `isAuthenticatedWithApple = true`
-    - Saves `displayName` to Keychain under key `"appleDisplayName"`
-  - Update existing `authenticate()` to call the new `getOrCreateIdentity(logins: nil)` path (anonymous, unchanged)
-  - Add `func signOut()` — clears Keychain (identityId, appleDisplayName), resets state flags
-  - Add `var displayName: String?` computed property — reads from Keychain
-- [x] 4.4 Create `ForeverDiary/Views/Auth/SignInView.swift`:
-  - Full-screen dark bg (`#222831`)
-  - Decorative dot-oval motif: 12 faint teal circles (`opacity(0.10)`) arranged in a ring using polar coordinates (Canvas or explicit positions)
-  - App name: `Text("Forever Diary").font(.system(.largeTitle, design: .serif, weight: .light))`
-  - Tagline: `Text("Every day, a story.\nEvery year, a life.")` — `.subheadline`, `.rounded`, `textSecondary`, centered, multiline
-  - `SignInWithAppleButton(.continue, onRequest:, onCompletion:)` — `.frame(height: 50).padding(.horizontal, 40)` — `.signInWithAppleButtonStyle(.white)` (dark bg)
-  - On completion: call `appleAuthService.handleCompletion(result:)` → `cognitoAuthService.authenticateWithApple(...)` → if success, `isAuthenticated = true`
-  - Privacy caption below: `"Your diary stays private. Synced securely to your iCloud account."` — `.caption`, `textSecondary`
-  - Staggered appear animation: dots `.opacity` 0→1 in 0.4s, title slides up + fades 0.5s (delay 0.2s), button fades 0.4s (delay 0.5s)
-  - Error handling: `@State private var errorMessage: String?` — show as `.alert` on sign-in failure
-- [x] 4.5 Update `ForeverDiary/App/ForeverDiaryApp.swift`:
-  - Add `@State private var cognitoAuth = CognitoAuthService()` and `@State private var appleAuth = AppleAuthService()`
-  - Auth gate in `WindowGroup`: `if cognitoAuth.isAuthenticatedWithApple { ContentView()... } else { SignInView()... }`
-  - Extend test-host guard to skip auth initialization: both services initialized only when `!isTestHost`
-  - Pass `cognitoAuth` and `appleAuth` as `.environment()` objects to both `SignInView` and `ContentView`
-- [x] 4.6 Update `ForeverDiary/Views/Settings/SettingsView.swift`:
-  - **Remove** `EditButton()` from `.toolbar`
-  - **Add Account section** (first section, above Appearance):
-    ```
-    Section("Account") {
-        HStack {
-            Image(systemName: "apple.logo").foregroundStyle(Color("textPrimary"))
-            VStack(alignment: .leading) {
-                Text(cognitoAuth.displayName ?? "Apple Account").font(.body.rounded)
-                Text("Signed in with Apple").font(.caption).foregroundStyle(Color("textSecondary"))
-            }
-        }
-        Button("Sign Out", role: .destructive) { showSignOutAlert = true }
-    }
-    ```
-  - Sign Out alert: "Sign out? You'll need to sign in again to access your diary." → calls `cognitoAuth.signOut()`
-  - **Move Edit into Habit Templates header**: change `Section { ... } header: { Text("Habit Templates") }` to custom header `HStack { Text("Habit Templates"); Spacer(); Button { editMode toggle } label: { Image(systemName: isEditing ? "checkmark.circle.fill" : "pencil.circle").foregroundStyle(Color("accentBright")) } }`
-  - Manage `@State private var editMode: EditMode = .inactive`, apply `.environment(\.editMode, $editMode)` on the `List`
-  - `.contentTransition(.symbolEffect(.replace))` on the pencil/checkmark icon swap
-- [x] 4.7 `xcodegen generate` — pick up new `Auth/SignInView.swift` and `Services/AppleAuthService.swift`
-- [x] 4.8 Build succeeds — `xcodebuild build`
+- [ ] 3.1 Replace all `NSColor.*` and hardcoded system color references in `CalendarSidebarView.swift` with `Color("name")` equivalents:
+  - Selected day circle: `Color("accentBright")`
+  - Today ring: `Color("accentBright").opacity(0.18)`
+  - Day text selected: `.white`; today: `Color("accentBright")`; default: `Color("textPrimary")`
+  - Entry dot: `Color("accentBright")`
+  - Weekday abbreviations: `Color("textSecondary")`
+  - Analytics button: `Color("textSecondary")`
+- [ ] 3.2 Month header text (month name + year): `Color("textPrimary")` / `Color("textSecondary")`
 
 ---
 
-## Phase 5: Final Verification
+## Phase 4: Column 2 — Rich "On This Day" Panel
 
-- [x] 5.1 Full test run — `xcodebuild test` — all tests pass (baseline: 76 after MarkdownTests removal)
-- [x] 5.2 Manual smoke check list:
-  - HomeView: no eye icon in toolbar, text editor works normally
-  - EntryDetailView: no eye icon, tap photos opens gallery, swipe between photos, pinch to zoom, swipe down to dismiss
-  - YearSummaryCard: 64×64 thumbnails, tap opens gallery
-  - Calendar: portrait cards, today has teal border, multi-photo days show stacked deck, count badge visible
-  - App launch (fresh install): shows SignInView
-  - Settings: Account section at top, pencil.circle in Habit Templates header, EditButton gone from toolbar
+Rewrite `DayEntryListView.swift` from a plain year list into iOS-style rich year cards.
+
+- [ ] 4.1 Keep existing `@Query` for entries (filtered by `monthDayKey`, `deletedAt == nil`, sorted by year desc)
+- [ ] 4.2 Replace each plain `entryRow()` with a `YearCard` subview containing:
+  - **Header row**: Year (title3, semibold, `Color("textPrimary")`) + weekday (subheadline, `Color("textSecondary")`)
+  - **Location** (if non-empty): mappin icon (size 10) + location text (caption, `Color("textSecondary")`)
+  - **Text preview**: 2-line limit, serif font, `Color("textPrimary")`; or "No entry yet" in tertiary if empty
+  - **Photo strip**: horizontal ScrollView, first 4 thumbnails as 60×60 rounded rectangles; "+N" indicator if more
+  - **Bottom stats**: photo count label + check-in completion label (caption, `Color("textSecondary")`)
+  - **Card container**: `Color("surfaceCard")` background, `cornerRadius: 12`, shadow `.black.opacity(0.04)`
+- [ ] 4.3 Selected year card: accent-colored border `Color("accentBright")` at 1.5pt
+- [ ] 4.4 "New Entry (year)" button: styled with `Color("accentBright")`, visible only when no current-year entry exists
+- [ ] 4.5 Delete via right-click context menu (keep existing confirmation alert)
+- [ ] 4.6 Fix year display: always use `String(entry.year)` (never integer interpolation which adds thousands separator)
+
+---
+
+## Phase 5: Column 3 — Full Entry Editor (match iOS EntryDetailView)
+
+Rewrite `EntryEditorView.swift` to mirror iOS `EntryDetailView` structure.
+
+- [ ] 5.1 **Header section**: weekday (title2, semibold, rounded) + formatted date + year; "Saved" transient indicator on right
+- [ ] 5.2 **Location field**: `HStack` with mappin icon + `TextField("Add location", text: $locationText)` at top of scroll area (not in bottom bar); debounce 0.5s save
+- [ ] 5.3 **Diary TextEditor**: serif font, min 250pt height, `scrollContentBackground(.hidden)`, `onChange` debounce 1s
+- [ ] 5.4 **Photos section**:
+  - `PhotosPicker` from `PhotosUI` (macOS 14+): `maxSelectionCount = max(0, 10 - currentPhotoCount)`, `matching: .images`
+  - `LazyVGrid` 3 columns, `GridItem(.flexible(), spacing: 8)`
+  - Each cell: thumbnail image, `aspectRatio(1, contentMode: .fill)`, `clipShape(RoundedRectangle(cornerRadius: 8))`
+  - Right-click context menu on each photo: "Delete Photo" → confirmation alert → `syncService.deletePhoto()`
+  - Tap photo → open `MacPhotoGalleryView` sheet
+  - Add photo button: `+` icon shown only when < 10 photos
+- [ ] 5.5 **macOS photo compression pipeline** (add `MacImageHelper.swift`):
+  - Input: `PhotosPickerItem.loadTransferable(type: Data.self)` → `Data`
+  - `NSImage(data:)` → resize to max 4096px (preserving aspect ratio) via `NSImage` draw into new size
+  - Compress: `NSBitmapImageRep(data: tiffRepresentation)?.representation(using: .jpeg, properties: [.compressionFactor: 0.85])`
+  - Thumbnail: resize to 300×300, compress at 0.8 quality
+  - Create `PhotoAsset(imageData: compressed, thumbnailData: thumbData)`; set `entry` relation; `modelContext.insert`; save; schedule sync
+- [ ] 5.6 **Check-in section** (expandable):
+  - Chevron toggle with spring animation
+  - `Color("surfaceCard")` background, cornerRadius 12, shadow
+  - Toggles: `.tint(Color("habitComplete"))`
+  - Text fields: `.textFieldStyle(.roundedBorder)`, maxWidth 180
+  - Number fields: `.textFieldStyle(.roundedBorder)`, maxWidth 80
+  - Completion count header: `completed/total`
+- [ ] 5.7 **Action bar** (bottom strip): photo count + check-in progress only (location moved to top); styled with `Color("surfaceCard")` background + divider
+- [ ] 5.8 Remove `CheckInSectionView.swift` — inline all check-in logic directly into `EntryEditorView`
+
+---
+
+## Phase 6: macOS Photo Gallery
+
+Create `ForeverDiaryMac/Views/Components/MacPhotoGalleryView.swift`.
+
+- [ ] 6.1 Sheet-based gallery (`.sheet` presentation, dark background)
+- [ ] 6.2 `TabView` with `.tabViewStyle(.page(indexDisplayMode: .never))` for swiping between photos
+- [ ] 6.3 Each photo page: `Image(nsImage:).resizable().scaledToFit()`
+- [ ] 6.4 Overlay controls:
+  - Top-left: Close button (xmark, white circle `Color.white.opacity(0.15)`)
+  - Top-right: counter "N / total"
+  - Bottom: indicator dots (6pt circles; `Color("accentBright")` for current, `Color.white.opacity(0.3)` for others)
+- [ ] 6.5 `MagnificationGesture` for pinch-zoom (1.0–4.0 range)
+- [ ] 6.6 Double-tap resets zoom
+
+---
+
+## Phase 7: Analytics — Full Port
+
+Rewrite `AnalyticsMacView.swift` as a full port of iOS `AnalyticsView`.
+
+- [ ] 7.1 `@Query` all entries + active templates (same queries as iOS)
+- [ ] 7.2 `AnalyticsPeriod` enum: Week / Month / Year (rawValue strings, CaseIterable)
+- [ ] 7.3 **Computed properties** (identical logic to iOS):
+  - `currentStreak: Int` — iterate backwards from today, count consecutive days with entries
+  - `longestStreak: Int` — scan all entry dates oldest-to-newest, track max consecutive run
+  - `periodEntries: [DiaryEntry]` — filter by date range (7 / 30 / 365 days)
+  - `periodDays: Int` — 7, 30, or 365
+  - `completionRate: Double` — `min(1.0, Double(periodEntries.count) / Double(periodDays))`
+- [ ] 7.4 **StatCard** view: icon (SF Symbol) + value + unit + title; background `Color("surfaceCard")`, shadow
+- [ ] 7.5 **Layout**:
+  - Period picker (`.pickerStyle(.segmented)`)
+  - 2-column HStack: current streak card + longest streak card
+  - Completion gauge: `Gauge(value: completionRate)` with `.gaugeStyle(.accessoryCircular)`, scaled 1.5×
+  - Habit completion: `ProgressView` per active template with label + %
+- [ ] 7.6 Empty state: icon + "Start writing to see your analytics" text
+- [ ] 7.7 Colors: `Color("backgroundPrimary")`, `Color("surfaceCard")`, `Color("accentBright")`, `Color("habitComplete")`, `Color("textPrimary")`, `Color("textSecondary")`
+- [ ] 7.8 Open as `.sheet` from sidebar Analytics button; frame `minWidth: 500, minHeight: 400`
+
+---
+
+## Phase 8: Settings — Full 4-Tab Rewrite
+
+Rewrite `SettingsMacView.swift` with Account / Appearance / Habits / Sync tabs.
+
+- [ ] 8.1 **Account tab**: user icon + email (`cognitoAuth.userEmail`), "Sign Out" button (role: .destructive) with confirmation alert
+- [ ] 8.2 **Appearance tab**: `Picker("Theme", selection: $appTheme)` with `AppTheme` cases, `.pickerStyle(.segmented)`; changes apply immediately via `preferredColorScheme`
+- [ ] 8.3 **Habits tab** — full CRUD:
+  - `@Query` templates sorted by `sortOrder`
+  - `List` with `ForEach` + `.onMove(perform: reorderTemplates)` + `.onDelete(perform: deleteTemplate)`
+  - Each row: label + type display + "Active" badge (`Color("habitComplete")` tint if active)
+  - "Add Habit" toolbar button → sheet with `MacTemplateSheet`
+  - Edit: click row → sheet with `MacTemplateSheet` pre-populated
+  - `reorderTemplates`: update `sortOrder` sequentially, mark `.pending`, save, schedule sync
+  - `deleteTemplate`: soft-delete via `syncService.deleteTemplate()` (check if this exists, otherwise hard-delete + mark pending)
+- [ ] 8.4 **Sync tab**: `syncService.isSyncing` spinner + last sync time (`Text(lastSync, style: .relative)`) + error text (red) + "Sync Now" button (disabled while syncing)
+- [ ] 8.5 Settings window frame: `minWidth: 520, minHeight: 380`
+- [ ] 8.6 Delete `MacTemplateSheet.swift` and inline template editing into `SettingsMacView` OR keep sheet but ensure it has label + type + isActive toggle
+
+---
+
+## Phase 9: Sync on Entry Create
+
+- [ ] 9.1 Verify `DayEntryListView.createEntry(year:)` calls `syncService.scheduleDebouncedSync()` after save (already added — confirm it's present)
+- [ ] 9.2 Verify `EntryEditorView.ensureEntry()` is called inside `debounceSave` which already calls sync — no extra call needed
+
+---
+
+## Phase 10: Build Verification
+
+- [ ] 10.1 `xcodegen generate` — output ends with `Generated: ForeverDiary.xcodeproj`
+- [ ] 10.2 `xcodebuild -scheme ForeverDiaryMac -destination "generic/platform=macOS" build` → **BUILD SUCCEEDED**
+- [ ] 10.3 `xcodebuild -scheme ForeverDiary -destination "platform=iOS Simulator,name=iPhone 16" build` → **BUILD SUCCEEDED** (iOS unchanged)
 
 ---
 
 ## Verification Commands
 
 ```bash
-# Regenerate Xcode project (after Phase 4 adds new files)
+# After all phases:
+cd /Users/kennethsolomon/Herd/forever-diary
 xcodegen generate
-
-# Build
-xcodebuild -scheme ForeverDiary -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build 2>&1 | tail -5
-# Expected: BUILD SUCCEEDED
-
-# Tests
-xcodebuild test -scheme ForeverDiary -destination 'platform=iOS Simulator,name=iPhone 17 Pro' 2>&1 | tail -10
-# Expected: 76+ tests pass (89 baseline minus 13 MarkdownTests)
+xcodebuild -scheme ForeverDiaryMac -configuration Debug -destination "generic/platform=macOS" build 2>&1 | tail -5
+xcodebuild -scheme ForeverDiary -configuration Debug -destination "platform=iOS Simulator,name=iPhone 16" build 2>&1 | tail -5
 ```
+
+Expected: `** BUILD SUCCEEDED **` for both.
 
 ---
 
 ## Acceptance Criteria
 
-1. No eye/view-mode icon appears anywhere in the app
-2. `MarkdownTextView.swift` and `MarkdownTests.swift` are deleted
-3. Tapping any photo in `EntryDetailView` opens full-screen gallery at the correct index
-4. Gallery allows swiping between all entry photos, shows `N / Total` counter
-5. Pinch-to-zoom and swipe-down-to-dismiss work on the gallery
-6. `YearSummaryCard` thumbnails are 64×64 and tappable into gallery
-7. Calendar day cells are portrait-ratio rounded-rect cards (not circles)
-8. Days with 2+ entries or 3+ photos show a stacked deck with count badge
-9. App launch without authentication shows `SignInView` with "Sign in with Apple" button
-10. After Sign in with Apple, user reaches `ContentView` and data syncs under authenticated identity
-11. Settings shows Account section (name, sign out) and Habit Templates header has pencil.circle icon
-12. `EditButton` is removed from the Settings toolbar
-13. All tests pass
+- [ ] macOS sidebar calendar uses `Color("accentBright")` for selection, custom colors throughout — no raw NSColor
+- [ ] Column 2 shows rich year cards: text preview, photo thumbnails, check-in badge, location
+- [ ] Column 3 entry editor has: diary text + location field + photo grid (3-col) + expandable check-ins
+- [ ] Photos can be added via PhotosPicker (native macOS Photos picker); compressed pipeline runs
+- [ ] Photo gallery opens as dark sheet with page-swipe, zoom, close button
+- [ ] Analytics sheet shows real data: streaks, completion gauge, per-habit progress bars
+- [ ] Settings has 4 tabs; Habits tab supports add / edit / reorder / delete with sync
+- [ ] Appearance tab theme picker changes the window color scheme
+- [ ] Both builds succeed with 0 errors
 
 ---
 
 ## Risks / Unknowns
 
-1. **AWS Cognito Identity Pool config required** — the pool must have `appleid.apple.com` added as a federated provider in the AWS console before `authenticateWithApple` will work. This is a manual AWS step outside of code.
-2. **IAM authenticated role** — the Cognito pool's authenticated IAM role must have the same DynamoDB + S3 + API Gateway permissions as the current unauthenticated role. Needs AWS console verification.
-3. **Sign in with Apple on Simulator** — requires a real Apple ID logged into the simulator and a provisioned App ID with "Sign in with Apple" capability. Test on device for full flow.
-4. **Data migration scope** — if user was previously using the app anonymously and signs in on a new device, their anonymous DynamoDB data won't be under the authenticated IdentityId. Local SwiftData data will re-sync correctly. Cross-device anonymous → authenticated migration is deferred to a follow-up.
-5. **`SignInWithAppleButton` requires AuthenticationServices** — framework auto-links on iOS 17, no `project.yml` change needed.
-6. **Entitlement** — `com.apple.developer.applesignin` must match an App ID in the Apple Developer portal. Simulator testing may work without a valid provisioning profile; device testing requires it.
+- `PhotosPicker` on macOS 14 requires `PhotosUI` framework in the macOS target — confirm it's in `project.yml` frameworks list
+- `NSBitmapImageRep` compression may differ from iOS `jpegData()` — test quality output
+- `deleteTemplate` on `SyncService` — check if a soft-delete method exists for templates or needs implementing
+- macOS `List` `.onMove` requires `.editMode` binding on macOS — may need `EditButton()` or manual edit state
