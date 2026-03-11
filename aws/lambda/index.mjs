@@ -182,7 +182,7 @@ async function handleSyncPull(userId, params) {
 }
 
 // GET /sync?check=true — lightweight check for changes since a timestamp
-// Returns { hasChanges, serverTime } with no item data, using Limit: 1 to minimize read cost
+// Returns { hasChanges, serverTime } with no item data, using Select: COUNT to minimize read cost
 async function handleChangeCheck(userId, since) {
   const serverTime = new Date().toISOString();
 
