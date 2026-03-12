@@ -8,6 +8,7 @@ struct ForeverDiaryApp: App {
     let googleAuth: GoogleAuthService
     let syncService: SyncService
     let networkMonitor: NetworkMonitor
+    let speechService: SpeechService
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -60,6 +61,12 @@ struct ForeverDiaryApp: App {
         googleAuth = GoogleAuthService()
         networkMonitor = monitor
         syncService = SyncService(apiClient: api, authService: auth, container: resolvedContainer, networkMonitor: monitor)
+
+        if isTestHost {
+            speechService = SpeechService()
+        } else {
+            speechService = SpeechService()
+        }
     }
 
     var body: some Scene {
@@ -69,6 +76,7 @@ struct ForeverDiaryApp: App {
                     .environment(syncService)
                     .environment(cognitoAuth)
                     .environment(networkMonitor)
+                    .environment(speechService)
                     .task { await startSync() }
             } else {
                 SignInView()

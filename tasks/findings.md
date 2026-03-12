@@ -1,54 +1,75 @@
-# Polling Optimization — Near-Instant Cross-Device Sync
+# Speech-to-Text for Diary Entries
 
 ## Problem Statement
 
-After Phase 1 sync fixes (pull-before-push, skip-unchanged guards), cross-device sync is correct but slow when both apps are open simultaneously. The 15-second periodic sync interval means edits on one device take up to 15 seconds to appear on the other. There is no visual feedback when remote changes arrive.
+Users want to dictate diary entries by speaking into the mic instead of typing. The app needs accurate transcription supporting English, Tagalog (Filipino), and other languages. Both iOS and macOS platforms must be supported.
 
-## Scenarios
+## Key Decisions
 
-| Scenario | Current (Phase 1) | After Approach A |
-|----------|-------------------|------------------|
-| App closed, open later | Works correctly (pull-first) | Same — no change needed |
-| App open, other device edits | Up to 15s delay, no notification | Up to 15s delay + "Updated" toast + cheaper polls |
-| App backgrounded, other device edits | Syncs on next foreground | Same — no change needed |
+1. **Dual-engine architecture** — Apple Speech (SFSpeechRecognizer) + WhisperKit, user picks primary in Settings, the other is automatic fallback
+2. **Fallback trigger** — If primary engine returns error or empty result, automatically retry with fallback (transparent to user)
+3. **Append mode** — Transcribed text appends to existing diary text (not replace)
+4. **Interaction** — Tap mic to start → waveform + live text preview → tap to stop → final text appended
+5. **Language** — Default to device locale; inline language picker remembers last choice. Apple Speech uses explicit locale (`fil-PH`, `en-US`, etc.). WhisperKit auto-detects language.
+6. **5-minute cap** per recording session. User can pause and record again to append more.
+7. **WhisperKit model download** — Proactive: download when user selects WhisperKit in Settings, not on first use
+8. **Same UI** regardless of active engine — mic button + waveform visualization
+9. **All text editors** — HomeView, EntryDetailView, and any other editable text fields on both platforms
+10. **macOS too** — Shared SpeechService in `ForeverDiary/Services/`, platform-specific UI
 
-## Chosen Approach: Polling Optimization (Approach A)
+## Chosen Approach: Hybrid (Apple Speech Primary + WhisperKit Fallback)
 
-No APNS — no paid Apple Developer account required.
+### Architecture
 
-### Changes
+- **`SpeechService.swift`** (shared, in `ForeverDiary/Services/`) — Protocol-based orchestrator
+  - `SpeechEngineProtocol` — Common interface for both engines
+  - `AppleSpeechEngine` — Uses `SFSpeechRecognizer` + `AVAudioEngine` for live streaming
+  - `WhisperKitEngine` — Uses WhisperKit for record-then-transcribe
+  - `SpeechService` — Orchestrator that calls primary, falls back to secondary on failure
+- **Settings toggle** — "Speech Engine" picker: Apple Speech (default) | WhisperKit
+  - Selecting WhisperKit triggers model download immediately
+  - Display model download progress + size
+- **UI components** (platform-specific):
+  - Mic button in action bar (iOS) / toolbar (macOS)
+  - Waveform visualization overlay/sheet during recording
+  - Live text preview while recording (Apple Speech only; WhisperKit shows after stop)
 
-1. **Lightweight change-check endpoint** — New `GET /sync?check=true` (or `HEAD /sync`) Lambda handler that returns only `{ hasChanges: bool, serverTime }` based on whether any items have `updatedAt > lastSyncDate`. Cheap query, minimal bandwidth.
+### Engine Behavior
 
-2. **Keep 15s polling, use lightweight check** — Keep existing 15-second interval. Each poll calls the lightweight check first — only triggers full `syncAll()` if `hasChanges` is true. Saves bandwidth and battery without increasing request frequency.
+| Feature | Apple Speech | WhisperKit |
+|---------|-------------|------------|
+| Live text preview | Yes (streaming) | No (after stop) |
+| Language detection | Explicit locale required | Automatic |
+| Offline | Yes (iOS 17+ on-device) | Yes (on-device model) |
+| Time limit | ~1 min server, longer on-device | 5 min cap (our limit) |
+| Model download | None | ~40-75MB on first selection |
+| Fallback role | Secondary when WhisperKit is primary | Secondary when Apple Speech is primary |
 
-3. **"Updated from another device" toast** — When `pullRemote()` finds and applies newer remote data, show a brief toast/banner on both iOS and macOS. Visible confirmation that sync happened.
+### Permissions Needed
 
-4. **Both platforms** — iOS (`ForeverDiaryApp`) and macOS (`ForeverDiaryMacApp`) get the same polling interval and toast behavior.
+- `NSSpeechRecognitionUsageDescription` — iOS Info.plist + project.yml
+- `NSMicrophoneUsageDescription` — iOS Info.plist + project.yml
+- `com.apple.security.device.audio-input` — macOS entitlements
 
-### What Users See
+### Affected Files
 
-- Edits on one device appear on the other within up to 15 seconds (while both are open) — same interval, but cheaper per poll
-- A brief "Updated from another device" message confirms the sync
-- No change to offline-first behavior — local edits save immediately
-- No change to app-open behavior — full sync still runs on foreground
+- **New:** `ForeverDiary/Services/SpeechService.swift` — Dual-engine orchestrator
+- **Modified:** `ForeverDiary/Views/Home/HomeView.swift` — Mic button + waveform (iOS)
+- **Modified:** `ForeverDiary/Views/Entry/EntryDetailView.swift` — Mic button + waveform (iOS)
+- **Modified:** `ForeverDiaryMac/Views/Editor/EntryEditorView.swift` — Mic button + waveform (macOS)
+- **Modified:** `ForeverDiary/Views/Settings/SettingsView.swift` — Engine picker + model download
+- **Modified:** `ForeverDiaryMac/Views/Settings/SettingsMacView.swift` — Engine picker + model download
+- **Modified:** `ForeverDiary/Info.plist` — Mic + speech permissions
+- **Modified:** `project.yml` — Permissions + WhisperKit SPM dependency
+- **Modified:** `ForeverDiaryMac/ForeverDiaryMac.entitlements` — Audio input entitlement
 
-### Constraints
+### Constraints (from lessons.md)
 
-- No paid Apple Developer account — no APNS, no background sync
-- Must not increase battery/network usage — lightweight check reduces bandwidth per poll, interval stays at 15s
-- Must work on both iOS 17+ and macOS 14+
-- Lessons: no `@Attribute(.unique)`, use `ModelContext(container)` in tests, guard test host init
-
-## Affected Files
-
-- `aws/lambda/index.mjs` — New lightweight change-check handler
-- `ForeverDiary/Services/SyncService.swift` — Polling interval, lightweight check, toast trigger
-- `ForeverDiary/App/ForeverDiaryApp.swift` — Updated periodic sync interval
-- `ForeverDiaryMac/App/ForeverDiaryMacApp.swift` — Same
-- `ForeverDiary/Views/Home/HomeView.swift` — Toast UI (iOS)
-- `ForeverDiaryMac/Views/Editor/EntryEditorView.swift` — Toast UI (macOS)
+- No `@Attribute(.unique)` in SwiftData models
+- Use `ModelContext(container)` in tests, not `container.mainContext`
+- Guard test host init with `NSClassFromString("XCTestCase")` check
+- No new security patterns flagged — mic/speech are standard iOS permissions
 
 ## Open Questions
 
-- None — straightforward polling optimization
+- None — all decisions made

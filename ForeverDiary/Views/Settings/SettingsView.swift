@@ -6,6 +6,7 @@ struct SettingsView: View {
     @Environment(SyncService.self) private var syncService
     @Environment(CognitoAuthService.self) private var cognitoAuth
     @Environment(NetworkMonitor.self) private var networkMonitor
+    @Environment(SpeechService.self) private var speechService
     @Query(sort: \CheckInTemplate.sortOrder) private var templates: [CheckInTemplate]
 
     @AppStorage("appTheme") private var appTheme: String = AppTheme.system.rawValue
@@ -21,6 +22,7 @@ struct SettingsView: View {
             List {
                 accountSection
                 appearanceSection
+                speechSection
                 habitTemplatesSection
                 syncSection
                 aboutSection
@@ -104,6 +106,93 @@ struct SettingsView: View {
             .pickerStyle(.segmented)
         } header: {
             Text("Appearance")
+        }
+    }
+
+    // MARK: - Speech
+
+    private var speechSection: some View {
+        Section {
+            Picker("Engine", selection: Binding(
+                get: { speechService.engineChoice },
+                set: { newValue in
+                    speechService.engineChoice = newValue
+                    if newValue == .whisperKit && speechService.whisperModelState == .notDownloaded {
+                        Task { await speechService.downloadWhisperModel() }
+                    }
+                }
+            )) {
+                ForEach(SpeechEngineType.allCases, id: \.rawValue) { engine in
+                    Text(engine.displayName).tag(engine)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            NavigationLink {
+                LanguagePickerView()
+                    .environment(speechService)
+            } label: {
+                HStack {
+                    Text("Language")
+                        .font(.system(.body, design: .rounded))
+                    Spacer()
+                    Text(speechService.currentLocaleDisplayName)
+                        .font(.system(.subheadline, design: .rounded))
+                        .foregroundStyle(Color("textSecondary"))
+                }
+            }
+
+            if speechService.engineChoice == .whisperKit || speechService.whisperModelState == .downloaded {
+                whisperModelRow
+            }
+        } header: {
+            Text("Speech")
+        } footer: {
+            Text("The other engine is used as fallback if the primary fails.")
+        }
+    }
+
+    private var whisperModelRow: some View {
+        HStack {
+            Text("WhisperKit Model")
+                .font(.system(.body, design: .rounded))
+            Spacer()
+            switch speechService.whisperModelState {
+            case .notDownloaded:
+                Button("Download") {
+                    Task { await speechService.downloadWhisperModel() }
+                }
+                .font(.system(.subheadline, design: .rounded))
+                .foregroundStyle(Color("accentBright"))
+            case .downloading:
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Downloading...")
+                        .font(.system(.caption, design: .rounded))
+                        .foregroundStyle(Color("textSecondary"))
+                }
+            case .downloaded:
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(Color("habitComplete"))
+                    Button("Delete", role: .destructive) {
+                        speechService.deleteWhisperModel()
+                    }
+                    .font(.system(.caption, design: .rounded))
+                }
+            case .error(let message):
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text(message)
+                        .font(.system(.caption2, design: .rounded))
+                        .foregroundStyle(Color("destructive"))
+                    Button("Retry") {
+                        Task { await speechService.downloadWhisperModel() }
+                    }
+                    .font(.system(.caption, design: .rounded))
+                    .foregroundStyle(Color("accentBright"))
+                }
+            }
         }
     }
 
