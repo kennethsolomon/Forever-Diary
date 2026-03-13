@@ -93,11 +93,16 @@ EOF
 launchctl load ~/Library/LaunchAgents/com.whisper.server.plist
 ```
 
+## Security Note
+
+Audio recordings are sent over plaintext HTTP to your local server. This is fine on a trusted home/office network, but avoid using this on public Wi-Fi or untrusted networks where traffic could be intercepted.
+
 ## Troubleshooting
 
 | Issue | Fix |
 |-------|-----|
 | App says "Server unreachable" | Check your Mac's IP hasn't changed. Make sure both devices are on the same Wi-Fi. |
+| App says "Not a Whisper server" | The URL is reachable but it's not a whisper.cpp server. Double-check the port and that whisper-server is running. |
 | Slow transcription | Try a smaller model (medium or small). |
 | Port already in use | Change `--port 8080` to another port and update the app's Server URL. |
 | iPhone can't reach localhost | `localhost` only works on the same machine. Use your Mac's IP address instead. |

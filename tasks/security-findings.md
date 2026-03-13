@@ -5,6 +5,95 @@
 
 ---
 
+# Security Audit — 2026-03-13 (Local Server Engine + whisper.cpp Integration)
+
+**Scope:** Changed files on branch `feat/speech-to-text` (server engine, connectivity, endpoint fixes)
+**Stack:** Swift 5.9 / SwiftUI (iOS 17+ / macOS 14+) + AVFoundation + Speech + WhisperKit + whisper.cpp server
+**Files audited:** 14 (SpeechService.swift, RecordingView.swift, SettingsView.swift, SettingsMacView.swift, SpeechServiceTests.swift, Info.plist, project.yml, ForeverDiaryApp.swift, ForeverDiaryMacApp.swift, HomeView.swift, EntryDetailView.swift, WaveformView.swift, whisper-server-setup.md, ForeverDiaryMac.entitlements)
+
+## Prior Findings — Resolution Status
+
+| # | Prior Finding | Status |
+|---|--------------|--------|
+| 1 | Medium — Temp audio files (PII) never deleted | **Still fixed** — `cleanupTempFile()` called in `cancelRecording()` (line 238) and `finishSession()` (line 242). Deferred cleanup on `stopRecording()` is intentional for retry. |
+| 2 | Low — `transcribeFileWithAppleSpeech()` may hang | **Still fixed** — 30-second timeout via `withTaskGroup` (lines 372-395). |
+
+## Critical (must fix before deploy)
+
+_None found._
+
+## High (fix before production)
+
+_None found._
+
+## Medium (should fix)
+
+### M1. Server URL stored in plaintext UserDefaults
+
+- **[SpeechService.swift:79-82]** `serverURL` is stored in `UserDefaults` with key `"whisperServerURL"`. While this is a local network URL (not a secret), UserDefaults are backed up to iCloud and included in unencrypted device backups.
+  **Standard:** CWE-312 — Cleartext Storage of Sensitive Information
+  **Risk:** Low in practice — the URL points to a local server with no credentials. No API keys or tokens are stored. The risk is informational since the URL itself reveals network topology.
+  **Recommendation:** Acceptable for local server URLs. If credentials are ever added to the server URL (e.g., basic auth), move to Keychain via `KeychainHelper`.
+
+### M2. Connection test accepts any HTTP response as "connected"
+
+- **[SpeechService.swift:414-420]** `testServerConnection()` treats any HTTP response (including 4xx/5xx) as `.connected`. This could mislead the user if they point at a non-Whisper HTTP server.
+  **Standard:** OWASP A05 — Security Misconfiguration (CWE-295 variant)
+  **Risk:** User thinks connection is valid when pointing at the wrong server. Transcription would fail at use-time with a clear error, so impact is UX confusion, not a security vulnerability.
+  **Recommendation:** Consider checking the `Server` response header for `whisper.cpp` to confirm it's the right server type. Low priority.
+
+## Low / Informational
+
+### L1. NSAllowsLocalNetworking ATS exception
+
+- **[Info.plist:15-19]** `NSAllowsLocalNetworking` allows plaintext HTTP to local network addresses. This is the correct and narrowest ATS exception for this use case.
+  **Standard:** OWASP A02 — Cryptographic Failures (CWE-319)
+  **Risk:** Minimal — only affects local network traffic (Bonjour, localhost, link-local IPs). Does not weaken TLS for external connections. Apple explicitly provides this flag for this purpose.
+  **Recommendation:** No action needed. This is the recommended approach per Apple's ATS documentation.
+
+### L2. Server URL input not sanitized for SSRF-like patterns
+
+- **[SpeechService.swift:403-406]** `testServerConnection()` validates `hasPrefix("http")` and non-empty, but does not restrict to private/local IP ranges. A user could enter a public URL.
+  **Standard:** OWASP A10 — SSRF (CWE-918)
+  **Risk:** Negligible — the user is entering their own URL on their own device. There is no server-side component being exploited. The app simply makes an HTTP request to wherever the user points it. This is expected user-controlled behavior.
+  **Recommendation:** No action needed. User-controlled URL on a client app is not SSRF.
+
+### L3. Audio data sent over plaintext HTTP to local server
+
+- **[SpeechService.swift:426-468]** Audio recordings (potentially containing PII — voice, spoken content) are sent via HTTP POST to the local server without TLS.
+  **Standard:** CWE-319 — Cleartext Transmission of Sensitive Information
+  **Risk:** Low — traffic stays on the local network. An attacker would need to be on the same Wi-Fi and perform ARP spoofing/MITM. The `NSAllowsLocalNetworking` flag limits this to local addresses.
+  **Recommendation:** Document in setup guide that the server should ideally be on a trusted/private network. For production use with remote servers, HTTPS should be required.
+
+## Passed Checks
+
+- **A01 Broken Access Control** — No auth bypass. Engine selection is local user preference, not access-controlled.
+- **A02 Cryptographic Failures** — No secrets in code. AWS credentials use Cognito + Keychain (unchanged). Server URL is not a secret.
+- **A03 Injection** — No string interpolation into SQL/commands. Server URL is used only as `URL(string:)` parameter. Multipart form data uses hardcoded field names.
+- **A04 Insecure Design** — No automatic fallback chain (user-controlled engine selection). Timeout on server requests (5s for test, 30s for transcription).
+- **A05 Security Misconfiguration** — ATS exception is narrowly scoped (`NSAllowsLocalNetworking` only).
+- **A06 Vulnerable Components** — WhisperKit 0.9.0+, no known CVEs. whisper.cpp is external server, not bundled.
+- **A07 Auth Failures** — No auth on local whisper server (expected — it's a local dev tool).
+- **A08 Data Integrity** — Audio file read via `Data(contentsOf:)` from app's own temp directory. No untrusted deserialization.
+- **A09 Logging** — No PII logged. Print statements use generic error descriptions only.
+- **A10 SSRF** — Client-side app, user controls URL input. Not applicable.
+- **PII Cleanup** — Temp audio files cleaned up via `cleanupTempFile()` in `cancelRecording()` and `finishSession()`.
+- **Input Validation** — `serverURL` validated (non-empty, http prefix). `languageIdentifier` passed to server as form field (server-side validation).
+- **Error Handling** — Granular error messages for timeout, unreachable, bad response. No stack traces leaked to UI.
+- **Entitlements** — macOS entitlements include `com.apple.security.network.client` (required for server communication) and `com.apple.security.device.audio-input` (required for microphone). Both are appropriate.
+
+## Summary
+
+| Severity | Count |
+|----------|-------|
+| Critical | 0 |
+| High     | 0 |
+| Medium   | 2 |
+| Low      | 3 |
+| **Total** | **5** |
+
+---
+
 # Security Audit — 2026-03-13 (Dictation Improvement — Tagalog & Language Controls)
 
 **Scope:** Changed files on branch `feat/speech-to-text` (dictation improvement commits)
@@ -809,6 +898,56 @@ _None found._
 - **A09 Logging** — No logging added. No PII exposure.
 - **XSS** — N/A (native SwiftUI, no web views)
 - **Test file** — CalendarNavigationTests.swift uses in-memory containers with `cloudKitDatabase: .none`, follows established test conventions. No secrets or PII.
+
+## Summary
+
+| Severity | Count |
+|----------|-------|
+| Critical | 0 |
+| High     | 0 |
+| Medium   | 0 |
+| Low      | 0 |
+| **Total** | **0** |
+
+---
+
+# Security Audit — 2026-03-13 (Re-audit after M2/L3 fixes)
+
+**Scope:** Changed files since last audit (SpeechService.swift, whisper-server-setup.md)
+**Stack:** Swift 5.9 / SwiftUI (iOS 17+) + whisper.cpp server
+**Files audited:** 2
+
+## Prior Findings — Resolution Status
+
+| # | Prior Finding | Status |
+|---|--------------|--------|
+| M1 | Server URL in plaintext UserDefaults | **Accepted** — local IP only, no credentials. No fix needed. |
+| M2 | Connection test accepts any HTTP response | **Fixed** — now checks `Server` header for "whisper" (`SpeechService.swift:417-422`). |
+| L1 | NSAllowsLocalNetworking ATS exception | **Accepted** — correct and narrowest exception. |
+| L2 | Server URL not restricted to private IPs | **Accepted** — user-controlled URL on client app, not SSRF. |
+| L3 | Audio over plaintext HTTP | **Fixed** — security note added to `docs/whisper-server-setup.md:96-98`. |
+
+## Critical (must fix before deploy)
+
+_None found._
+
+## High (fix before production)
+
+_None found._
+
+## Medium (should fix)
+
+_None found._
+
+## Low / Informational
+
+_None found._
+
+## Passed Checks
+
+- **M2 fix verified** — `testServerConnection()` now reads `Server` response header and requires it to contain "whisper" (case-insensitive). Non-Whisper servers show "Not a Whisper server" error. Confirmed whisper.cpp returns `Server: whisper.cpp` header.
+- **L3 fix verified** — `docs/whisper-server-setup.md` now includes a Security Note warning about plaintext HTTP on untrusted networks, and a troubleshooting entry for the new "Not a Whisper server" error.
+- **No regressions** — URL validation guard unchanged. Timeout unchanged. Error handling unchanged.
 
 ## Summary
 

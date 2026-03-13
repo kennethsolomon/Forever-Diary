@@ -10,11 +10,11 @@
 | 3 | /write-plan | done | 27 steps, 9 phases — enum, server transcription, engine dispatch, settings iOS+macOS, recording view, error handling, build |
 | 4 | /execute-plan | done | all 27 steps complete, iOS+macOS build, 179/179 tests pass |
 | 5 | /commit | done | 7f3f881 |
-| 6 | /write-tests | >> next << | |
-| 7 | /commit | not yet | |
-| 8 | /debug | not yet | |
-| 9 | /security-check | not yet | |
-| 10 | /commit | not yet | |
+| 6 | /write-tests | done | 16 new tests, 195/195 pass |
+| 7 | /commit | done | b32e891, d686bda, 0223b96 |
+| 8 | /debug | skipped | bugs fixed during testing (endpoint, connectivity, language) |
+| 9 | /security-check | done | clean on attempt 2 — M2+L3 fixed, all 0 |
+| 10 | /commit | >> next << | |
 | 11 | /review | not yet | |
 | 12 | /commit | not yet | |
 | 13 | /finish-feature | not yet | |

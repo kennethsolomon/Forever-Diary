@@ -413,8 +413,13 @@ final class SpeechService {
 
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
-            if let _ = response as? HTTPURLResponse {
-                serverConnectionState = .connected
+            if let http = response as? HTTPURLResponse {
+                let server = http.value(forHTTPHeaderField: "Server") ?? ""
+                if server.lowercased().contains("whisper") {
+                    serverConnectionState = .connected
+                } else {
+                    serverConnectionState = .failed("Not a Whisper server")
+                }
             } else {
                 serverConnectionState = .failed("Unexpected response")
             }
