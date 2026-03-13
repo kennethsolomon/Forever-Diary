@@ -5,17 +5,17 @@
 
 | # | Step | Status | Notes |
 |---|------|--------|-------|
-| 1 | /brainstorm | done | speech-to-text: dual-engine (Apple Speech + WhisperKit), settings toggle, 5-min cap, both platforms |
-| 2 | /frontend-design | done | mic button in action bar, recording sheet/popover, waveform bars, settings engine picker |
-| 3 | /write-plan | done | 17 steps, 8 phases — permissions, SpeechService, shared UI, iOS+macOS integration, settings, verify |
-| 4 | /execute-plan | done | all 17 steps complete, iOS+macOS build, 122/122 tests pass |
-| 5 | /commit | done | feat/speech-to-text branch, 6a57611 |
-| 6 | /write-tests | done | 28 new tests in SpeechServiceTests.swift, 150/150 total pass |
-| 7 | /commit | done | f81a2c8, test file + workflow tracker |
-| 8 | /debug | skipped | user skipped to /security-check |
-| 9 | /security-check | done | clean on attempt 2 — temp file cleanup + timeout fix |
-| 10 | /commit | >> next << | conditional |
-| 11 | /review | not yet | loop |
-| 12 | /commit | not yet | conditional |
+| 1 | /brainstorm | done | dictation improvement: large-v3-turbo model, WhisperKit language list, explicit language passing, noise cleanup, favorites |
+| 2 | /frontend-design | done | quick-switch pills, redesigned language picker with search + favorites + swipe actions |
+| 3 | /write-plan | done | 26 steps, 7 phases — language data, model upgrade, locale mapping, quick-switch UI, picker redesign, macOS, build |
+| 4 | /execute-plan | done | all 26 steps complete, iOS+macOS build, 152/152 tests pass |
+| 5 | /commit | >> next << | |
+| 6 | /write-tests | not yet | |
+| 7 | /commit | not yet | |
+| 8 | /debug | not yet | |
+| 9 | /security-check | not yet | |
+| 10 | /commit | not yet | |
+| 11 | /review | not yet | |
+| 12 | /commit | not yet | |
 | 13 | /finish-feature | not yet | |
-| 14 | /release | not yet | optional |
+| 14 | /release | not yet | |

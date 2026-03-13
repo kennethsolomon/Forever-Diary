@@ -312,12 +312,9 @@ private struct SpeechTab: View {
                         get: { speechService.languageIdentifier },
                         set: { speechService.languageIdentifier = $0 }
                     )) {
-                        if speechService.engineChoice == .whisperKit {
-                            Text("Auto-detect").tag("auto")
-                        }
-                        ForEach(SpeechService.supportedLocales, id: \.identifier) { locale in
-                            Text(locale.localizedString(forIdentifier: locale.identifier) ?? locale.identifier)
-                                .tag(locale.identifier)
+                        Text("Auto-detect").tag("auto")
+                        ForEach(SpeechService.whisperSupportedLanguages, id: \.code) { lang in
+                            Text(lang.name).tag(lang.code)
                         }
                     }
                     .frame(maxWidth: 200)
@@ -330,9 +327,14 @@ private struct SpeechTab: View {
                         .frame(maxWidth: 300)
 
                     HStack {
-                        Text("WhisperKit Model")
-                            .font(.system(.subheadline, design: .rounded))
-                            .foregroundStyle(Color("textPrimary"))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("WhisperKit Model")
+                                .font(.system(.subheadline, design: .rounded))
+                                .foregroundStyle(Color("textPrimary"))
+                            Text("large-v3-turbo (~809 MB)")
+                                .font(.system(.caption2, design: .rounded))
+                                .foregroundStyle(Color("textSecondary"))
+                        }
                         Spacer()
                         whisperModelStatus
                     }

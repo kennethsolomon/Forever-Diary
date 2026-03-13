@@ -116,52 +116,63 @@ final class SpeechServiceTests: XCTestCase {
 
     // MARK: - Language Identifier (UserDefaults-backed)
 
-    func testLanguageIdentifierDefaultsToCurrentLocale() {
+    func testLanguageIdentifierDefaultsToAuto() {
         UserDefaults.standard.removeObject(forKey: "speechLanguage")
         let service = SpeechService()
-        XCTAssertEqual(service.languageIdentifier, Locale.current.identifier)
+        XCTAssertEqual(service.languageIdentifier, "auto")
     }
 
     func testLanguageIdentifierSetPersistsToUserDefaults() {
         let service = SpeechService()
-        service.languageIdentifier = "fil-PH"
-        XCTAssertEqual(UserDefaults.standard.string(forKey: "speechLanguage"), "fil-PH")
+        service.languageIdentifier = "tl"
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "speechLanguage"), "tl")
     }
 
     func testLanguageIdentifierGetReadsFromUserDefaults() {
-        UserDefaults.standard.set("ja-JP", forKey: "speechLanguage")
+        UserDefaults.standard.set("ja", forKey: "speechLanguage")
         let service = SpeechService()
-        XCTAssertEqual(service.languageIdentifier, "ja-JP")
+        XCTAssertEqual(service.languageIdentifier, "ja")
     }
 
-    // MARK: - Supported Locales
+    // MARK: - Supported Languages
 
-    func testSupportedLocalesIsNotEmpty() {
-        let locales = SpeechService.supportedLocales
-        XCTAssertFalse(locales.isEmpty, "supportedLocales should contain at least one locale")
+    func testWhisperSupportedLanguagesIsNotEmpty() {
+        let languages = SpeechService.whisperSupportedLanguages
+        XCTAssertFalse(languages.isEmpty, "whisperSupportedLanguages should contain at least one language")
     }
 
-    func testSupportedLocalesAreSortedAlphabetically() {
-        let locales = SpeechService.supportedLocales
-        let names = locales.compactMap { $0.localizedString(forIdentifier: $0.identifier) }
-        XCTAssertEqual(names, names.sorted(), "supportedLocales should be sorted by display name")
+    func testWhisperSupportedLanguagesContainsTagalog() {
+        let languages = SpeechService.whisperSupportedLanguages
+        XCTAssertTrue(languages.contains { $0.code == "tl" }, "Should contain Filipino (Tagalog)")
+    }
+
+    func testWhisperSupportedLanguagesAreSortedAlphabetically() {
+        let languages = SpeechService.whisperSupportedLanguages
+        let names = languages.map { $0.name }
+        XCTAssertEqual(names, names.sorted(), "whisperSupportedLanguages should be sorted by name")
+    }
+
+    // MARK: - Display Name
+
+    func testDisplayNameForKnownCode() {
+        XCTAssertEqual(SpeechService.displayName(for: "en"), "English")
+        XCTAssertEqual(SpeechService.displayName(for: "tl"), "Filipino (Tagalog)")
+        XCTAssertEqual(SpeechService.displayName(for: "auto"), "Auto-detect")
     }
 
     // MARK: - Current Locale Display Name
 
     func testCurrentLocaleDisplayNameReturnsNonEmptyString() {
         let service = SpeechService()
-        service.languageIdentifier = "en-US"
+        service.languageIdentifier = "en"
         XCTAssertFalse(service.currentLocaleDisplayName.isEmpty)
     }
 
     func testCurrentLocaleDisplayNameMatchesSetLanguage() {
         let service = SpeechService()
-        service.languageIdentifier = "en-US"
+        service.languageIdentifier = "en"
         let displayName = service.currentLocaleDisplayName
-        // Should contain "English" in some form
-        XCTAssertTrue(displayName.lowercased().contains("english"),
-                      "Display name for en-US should contain 'english', got: \(displayName)")
+        XCTAssertEqual(displayName, "English")
     }
 
     // MARK: - Cancel Recording (state reset)
