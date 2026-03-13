@@ -51,13 +51,14 @@ ipconfig getifaddr en0
 Test from the command line:
 
 ```bash
-# Check server is running
-curl http://localhost:8080/v1/models
+# Check server is running (should return HTTP 200 with Server: whisper.cpp header)
+curl -v http://localhost:8080 2>&1 | grep -i "server:"
 
 # Test transcription with a WAV file
-curl http://localhost:8080/v1/audio/transcriptions \
+curl http://localhost:8080/inference \
   -F "file=@test.wav" \
-  -F "model=whisper-1" \
+  -F "temperature=0.0" \
+  -F "response_format=json" \
   -F "language=en"
 ```
 
@@ -80,6 +81,8 @@ cat > ~/Library/LaunchAgents/com.whisper.server.plist << 'EOF'
         <string>/Users/YOUR_USERNAME/ggml-large-v3-turbo.bin</string>
         <string>--port</string>
         <string>8080</string>
+        <string>--host</string>
+        <string>0.0.0.0</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
