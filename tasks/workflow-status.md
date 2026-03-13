@@ -9,8 +9,8 @@
 | 2 | /frontend-design | done | engine pill + menu dropdown on recording view, segmented 3-option picker + server URL + connection test in settings |
 | 3 | /write-plan | done | 27 steps, 9 phases — enum, server transcription, engine dispatch, settings iOS+macOS, recording view, error handling, build |
 | 4 | /execute-plan | done | all 27 steps complete, iOS+macOS build, 179/179 tests pass |
-| 5 | /commit | >> next << | |
-| 6 | /write-tests | not yet | |
+| 5 | /commit | done | 7f3f881 |
+| 6 | /write-tests | >> next << | |
 | 7 | /commit | not yet | |
 | 8 | /debug | not yet | |
 | 9 | /security-check | not yet | |
