@@ -9,6 +9,11 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ## [Unreleased]
 
 ### Added
+- Voice dictation with dual-engine speech-to-text: Apple Speech (streaming) + WhisperKit (on-device Whisper model) with automatic fallback if primary engine returns empty
+- Recording UI with live waveform visualization, countdown timer (5-min cap), and real-time transcript preview (iOS sheet / macOS popover)
+- Speech engine picker in Settings (Apple Speech or WhisperKit) with language selection and WhisperKit model download/delete management
+- Mic button in Home and Entry Detail action bars for quick voice-to-text entry on both iOS and macOS
+- 28 new XCTest cases for SpeechService covering enums, initial state, UserDefaults persistence, locale support, and state reset (now 150 total)
 - Lightweight sync change-check: `GET /sync?check=true&since=<ts>` returns `{ hasChanges, serverTime }` without fetching item data — periodic sync now polls cheaply before doing a full pull
 - "Updated from another device" toast on iOS and macOS — appears when `pullRemote()` applies remote entry changes, auto-dismisses after 3 seconds
 - 11 new XCTest cases covering change-check guard clauses, toast trigger/dismiss/retrigger, LWW return values, and periodic sync lifecycle (now 122 total)
@@ -83,6 +88,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Critical save paths use do/catch with error logging instead of silent `try?`
 
 ### Security
+- Temporary audio recordings (.wav) cleaned up immediately after transcription in both stop and cancel paths
+- Apple Speech file-based transcription wrapped in 30-second timeout via `withTaskGroup` to prevent indefinite hangs
 - Google OAuth uses PKCE (SHA-256 code challenge) — no client secret required for iOS
 - Token exchange uses RFC 3986 unreserved character encoding (alphanumerics + `-._~`) per spec
 - JWT claims extracted from ID token for display only; full token verified server-side by Cognito
