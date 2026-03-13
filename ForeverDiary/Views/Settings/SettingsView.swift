@@ -123,10 +123,15 @@ struct SettingsView: View {
                 }
             )) {
                 ForEach(SpeechEngineType.allCases, id: \.rawValue) { engine in
-                    Text(engine.displayName).tag(engine)
+                    Text(engine.shortName).tag(engine)
                 }
             }
             .pickerStyle(.segmented)
+
+            if speechService.engineChoice == .localServer {
+                serverURLRow
+                connectionTestRow
+            }
 
             NavigationLink {
                 LanguagePickerView()
@@ -148,7 +153,63 @@ struct SettingsView: View {
         } header: {
             Text("Speech")
         } footer: {
-            Text("The other engine is used as fallback if the primary fails.")
+            Text("Selected engine is used for all recordings. Switch per-recording on the recording screen.")
+        }
+    }
+
+    private var serverURLRow: some View {
+        HStack {
+            Text("Server URL")
+                .font(.system(.body, design: .rounded))
+            Spacer()
+            TextField("http://localhost:8080", text: Binding(
+                get: { speechService.serverURL },
+                set: { speechService.serverURL = $0 }
+            ))
+            .font(.system(.subheadline, design: .rounded))
+            .foregroundStyle(Color("textPrimary"))
+            .multilineTextAlignment(.trailing)
+            #if os(iOS)
+            .keyboardType(.URL)
+            .textInputAutocapitalization(.never)
+            #endif
+            .autocorrectionDisabled()
+        }
+    }
+
+    private var connectionTestRow: some View {
+        HStack {
+            switch speechService.serverConnectionState {
+            case .untested:
+                EmptyView()
+            case .testing:
+                ProgressView()
+                    .controlSize(.small)
+                Text("Testing...")
+                    .font(.system(.caption, design: .rounded))
+                    .foregroundStyle(Color("textSecondary"))
+            case .connected:
+                Image(systemName: "circle.fill")
+                    .font(.system(size: 8))
+                    .foregroundStyle(Color("habitComplete"))
+                Text("Connected")
+                    .font(.system(.caption, design: .rounded))
+                    .foregroundStyle(Color("habitComplete"))
+            case .failed(let reason):
+                Image(systemName: "circle.fill")
+                    .font(.system(size: 8))
+                    .foregroundStyle(Color("destructive"))
+                Text(reason)
+                    .font(.system(.caption, design: .rounded))
+                    .foregroundStyle(Color("destructive"))
+            }
+            Spacer()
+            Button("Test") {
+                Task { await speechService.testServerConnection() }
+            }
+            .font(.system(.subheadline, design: .rounded))
+            .foregroundStyle(Color("accentBright"))
+            .disabled(speechService.serverConnectionState == .testing)
         }
     }
 
@@ -157,7 +218,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("WhisperKit Model")
                     .font(.system(.body, design: .rounded))
-                Text("large-v3-turbo (~809 MB)")
+                Text("small (~244 MB)")
                     .font(.system(.caption2, design: .rounded))
                     .foregroundStyle(Color("textSecondary"))
             }

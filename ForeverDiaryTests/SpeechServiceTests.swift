@@ -8,25 +8,41 @@ final class SpeechServiceTests: XCTestCase {
         // Clean up UserDefaults to avoid test pollution
         UserDefaults.standard.removeObject(forKey: "speechEngine")
         UserDefaults.standard.removeObject(forKey: "speechLanguage")
+        UserDefaults.standard.removeObject(forKey: "whisperServerURL")
     }
 
     // MARK: - SpeechEngineType
 
     func testSpeechEngineTypeRawValues() {
+        XCTAssertEqual(SpeechEngineType.localServer.rawValue, "localserver")
         XCTAssertEqual(SpeechEngineType.apple.rawValue, "apple")
         XCTAssertEqual(SpeechEngineType.whisperKit.rawValue, "whisperkit")
     }
 
     func testSpeechEngineTypeDisplayNames() {
+        XCTAssertEqual(SpeechEngineType.localServer.displayName, "Local Server")
         XCTAssertEqual(SpeechEngineType.apple.displayName, "Apple Speech")
         XCTAssertEqual(SpeechEngineType.whisperKit.displayName, "WhisperKit")
     }
 
+    func testSpeechEngineTypeShortNames() {
+        XCTAssertEqual(SpeechEngineType.localServer.shortName, "Server")
+        XCTAssertEqual(SpeechEngineType.whisperKit.shortName, "Whisper")
+        XCTAssertEqual(SpeechEngineType.apple.shortName, "Apple")
+    }
+
+    func testSpeechEngineTypeSymbolNames() {
+        XCTAssertEqual(SpeechEngineType.localServer.symbolName, "antenna.radiowaves.left.and.right")
+        XCTAssertEqual(SpeechEngineType.whisperKit.symbolName, "cpu")
+        XCTAssertEqual(SpeechEngineType.apple.symbolName, "mic")
+    }
+
     func testSpeechEngineTypeAllCasesCount() {
-        XCTAssertEqual(SpeechEngineType.allCases.count, 2)
+        XCTAssertEqual(SpeechEngineType.allCases.count, 3)
     }
 
     func testSpeechEngineTypeInitFromRawValue() {
+        XCTAssertEqual(SpeechEngineType(rawValue: "localserver"), .localServer)
         XCTAssertEqual(SpeechEngineType(rawValue: "apple"), .apple)
         XCTAssertEqual(SpeechEngineType(rawValue: "whisperkit"), .whisperKit)
     }
@@ -372,5 +388,159 @@ final class SpeechServiceTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: "speechLanguage")
         let service = SpeechService()
         XCTAssertEqual(service.currentLocaleDisplayName, "Auto-detect")
+    }
+
+    // MARK: - ServerConnectionState
+
+    func testServerConnectionStateEquatable() {
+        XCTAssertEqual(ServerConnectionState.untested, .untested)
+        XCTAssertEqual(ServerConnectionState.testing, .testing)
+        XCTAssertEqual(ServerConnectionState.connected, .connected)
+        XCTAssertEqual(ServerConnectionState.failed("timeout"), .failed("timeout"))
+    }
+
+    func testServerConnectionStateDifferentFailuresNotEqual() {
+        XCTAssertNotEqual(ServerConnectionState.failed("a"), .failed("b"))
+    }
+
+    func testServerConnectionStateDifferentCasesNotEqual() {
+        XCTAssertNotEqual(ServerConnectionState.untested, .connected)
+        XCTAssertNotEqual(ServerConnectionState.testing, .connected)
+        XCTAssertNotEqual(ServerConnectionState.connected, .failed("x"))
+    }
+
+    // MARK: - Server URL (UserDefaults-backed)
+
+    func testServerURLDefaultsToLocalhost() {
+        UserDefaults.standard.removeObject(forKey: "whisperServerURL")
+        let service = SpeechService()
+        XCTAssertEqual(service.serverURL, "http://localhost:8080")
+    }
+
+    func testServerURLSetPersistsToUserDefaults() {
+        let service = SpeechService()
+        service.serverURL = "http://192.168.1.5:9090"
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "whisperServerURL"), "http://192.168.1.5:9090")
+    }
+
+    func testServerURLGetReadsFromUserDefaults() {
+        UserDefaults.standard.set("http://10.0.0.1:8080", forKey: "whisperServerURL")
+        let service = SpeechService()
+        XCTAssertEqual(service.serverURL, "http://10.0.0.1:8080")
+    }
+
+    // MARK: - Initial Server Connection State
+
+    func testInitialServerConnectionStateIsUntested() {
+        let service = SpeechService()
+        XCTAssertEqual(service.serverConnectionState, .untested)
+    }
+
+    // MARK: - Engine Choice with Local Server
+
+    func testEngineChoiceSetToLocalServer() {
+        let service = SpeechService()
+        service.engineChoice = .localServer
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "speechEngine"), "localserver")
+    }
+
+    func testEngineChoiceGetLocalServerFromUserDefaults() {
+        UserDefaults.standard.set("localserver", forKey: "speechEngine")
+        let service = SpeechService()
+        XCTAssertEqual(service.engineChoice, .localServer)
+    }
+
+    // MARK: - SpeechEngineType allCases Order
+
+    func testSpeechEngineTypeAllCasesOrder() {
+        let cases = SpeechEngineType.allCases
+        XCTAssertEqual(cases[0], .localServer)
+        XCTAssertEqual(cases[1], .whisperKit)
+        XCTAssertEqual(cases[2], .apple)
+    }
+
+    // MARK: - Test Server Connection
+
+    @MainActor
+    func testServerConnectionWithEmptyURL() async {
+        let service = SpeechService()
+        service.serverURL = ""
+        await service.testServerConnection()
+        if case .failed(let msg) = service.serverConnectionState {
+            XCTAssertEqual(msg, "Invalid URL")
+        } else {
+            XCTFail("Expected .failed state for empty URL, got \(service.serverConnectionState)")
+        }
+    }
+
+    @MainActor
+    func testServerConnectionWithNonHttpURL() async {
+        let service = SpeechService()
+        service.serverURL = "ftp://invalid"
+        await service.testServerConnection()
+        if case .failed(let msg) = service.serverConnectionState {
+            XCTAssertEqual(msg, "Invalid URL")
+        } else {
+            XCTFail("Expected .failed state for non-http URL, got \(service.serverConnectionState)")
+        }
+    }
+
+    @MainActor
+    func testServerConnectionWithWhitespaceOnlyURL() async {
+        let service = SpeechService()
+        service.serverURL = "   "
+        await service.testServerConnection()
+        if case .failed(let msg) = service.serverConnectionState {
+            XCTAssertEqual(msg, "Invalid URL")
+        } else {
+            XCTFail("Expected .failed state for whitespace-only URL, got \(service.serverConnectionState)")
+        }
+    }
+
+    @MainActor
+    func testServerConnectionWithUnreachableServer() async {
+        let service = SpeechService()
+        // Use a port that's almost certainly not running a server
+        service.serverURL = "http://127.0.0.1:19999"
+        await service.testServerConnection()
+        if case .failed = service.serverConnectionState {
+            // Expected — server is unreachable
+        } else {
+            XCTFail("Expected .failed state for unreachable server, got \(service.serverConnectionState)")
+        }
+    }
+
+    // MARK: - Finish Session
+
+    func testFinishSessionDoesNotCrashWithNoRecording() {
+        let service = SpeechService()
+        // Should not crash when there's no recording URL
+        service.finishSession()
+    }
+
+    // MARK: - Retry Transcription Without Recording
+
+    @MainActor
+    func testRetryTranscriptionWithoutRecordingSetsError() async {
+        let service = SpeechService()
+        let result = await service.retryTranscription(using: .localServer)
+        XCTAssertEqual(result, "")
+        XCTAssertEqual(service.error, "No recording available to retry")
+    }
+
+    @MainActor
+    func testRetryTranscriptionWithoutRecordingForWhisperKit() async {
+        let service = SpeechService()
+        let result = await service.retryTranscription(using: .whisperKit)
+        XCTAssertEqual(result, "")
+        XCTAssertEqual(service.error, "No recording available to retry")
+    }
+
+    @MainActor
+    func testRetryTranscriptionWithoutRecordingForApple() async {
+        let service = SpeechService()
+        let result = await service.retryTranscription(using: .apple)
+        XCTAssertEqual(result, "")
+        XCTAssertEqual(service.error, "No recording available to retry")
     }
 }

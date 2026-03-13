@@ -10,15 +10,40 @@ import WhisperKit
 // MARK: - Types
 
 enum SpeechEngineType: String, CaseIterable {
-    case apple = "apple"
+    case localServer = "localserver"
     case whisperKit = "whisperkit"
+    case apple = "apple"
 
     var displayName: String {
         switch self {
-        case .apple: return "Apple Speech"
+        case .localServer: return "Local Server"
         case .whisperKit: return "WhisperKit"
+        case .apple: return "Apple Speech"
         }
     }
+
+    var shortName: String {
+        switch self {
+        case .localServer: return "Server"
+        case .whisperKit: return "Whisper"
+        case .apple: return "Apple"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .localServer: return "antenna.radiowaves.left.and.right"
+        case .whisperKit: return "cpu"
+        case .apple: return "mic"
+        }
+    }
+}
+
+enum ServerConnectionState: Equatable {
+    case untested
+    case testing
+    case connected
+    case failed(String)
 }
 
 enum WhisperModelState: Equatable {
@@ -42,12 +67,18 @@ final class SpeechService {
     private(set) var error: String?
     private(set) var timeRemaining: TimeInterval = 300
     private(set) var whisperModelState: WhisperModelState = .notDownloaded
+    private(set) var serverConnectionState: ServerConnectionState = .untested
 
     // MARK: Settings (UserDefaults-backed)
 
     var engineChoice: SpeechEngineType {
         get { SpeechEngineType(rawValue: UserDefaults.standard.string(forKey: "speechEngine") ?? "apple") ?? .apple }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: "speechEngine") }
+    }
+
+    var serverURL: String {
+        get { UserDefaults.standard.string(forKey: "whisperServerURL") ?? "http://localhost:8080" }
+        set { UserDefaults.standard.set(newValue, forKey: "whisperServerURL") }
     }
 
     var languageIdentifier: String {
@@ -124,7 +155,7 @@ final class SpeechService {
     // MARK: - Stop Recording
 
     @MainActor
-    func stopRecording() async -> String {
+    func stopRecording(using engine: SpeechEngineType? = nil) async -> String {
         guard isRecording else { return transcribedText }
 
         isRecording = false
@@ -133,38 +164,61 @@ final class SpeechService {
         // Finalize audio engine and get recorded file URL
         let fileURL = finishAudioEngine()
 
-        // Get primary result
+        // Dispatch to selected engine — no automatic fallback
+        let activeEngine = engine ?? engineChoice
         var result = ""
 
-        if engineChoice == .apple {
-            result = finishAppleSpeechRecognition()
-        } else {
-            // WhisperKit primary — transcribe recorded file
+        switch activeEngine {
+        case .localServer:
+            if let url = fileURL {
+                isProcessing = true
+                result = await transcribeWithLocalServer(url: url)
+                isProcessing = false
+            }
+        case .whisperKit:
             if let url = fileURL {
                 isProcessing = true
                 result = await transcribeWithWhisperKit(url: url)
                 isProcessing = false
             }
-        }
-
-        // Fallback if primary returned empty (skip WhisperKit fallback if model not downloaded to avoid surprise ~809MB download)
-        if result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let url = fileURL {
-            let fallback: SpeechEngineType = engineChoice == .apple ? .whisperKit : .apple
-            let shouldAttemptFallback = fallback != .whisperKit || whisperModelState == .downloaded
-            if shouldAttemptFallback {
+        case .apple:
+            result = finishAppleSpeechRecognition()
+            // If live recognition returned empty, try file-based transcription
+            if result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let url = fileURL {
                 isProcessing = true
-                if fallback == .whisperKit {
-                    result = await transcribeWithWhisperKit(url: url)
-                } else {
-                    result = await transcribeFileWithAppleSpeech(url: url)
-                }
+                result = await transcribeFileWithAppleSpeech(url: url)
                 isProcessing = false
             }
         }
 
         transcribedText = result
         audioLevels = [0, 0, 0, 0, 0]
-        cleanupTempFile()
+        // Don't cleanup temp file here — keep it for retry. Cleanup on cancel or dismiss.
+        return result
+    }
+
+    @MainActor
+    func retryTranscription(using engine: SpeechEngineType) async -> String {
+        guard let url = recordingURL, FileManager.default.fileExists(atPath: url.path) else {
+            error = "No recording available to retry"
+            return ""
+        }
+
+        error = nil
+        isProcessing = true
+
+        var result = ""
+        switch engine {
+        case .localServer:
+            result = await transcribeWithLocalServer(url: url)
+        case .whisperKit:
+            result = await transcribeWithWhisperKit(url: url)
+        case .apple:
+            result = await transcribeFileWithAppleSpeech(url: url)
+        }
+
+        isProcessing = false
+        transcribedText = result
         return result
     }
 
@@ -181,6 +235,10 @@ final class SpeechService {
         recognitionRequest = nil
         transcribedText = ""
         audioLevels = [0, 0, 0, 0, 0]
+        cleanupTempFile()
+    }
+
+    func finishSession() {
         cleanupTempFile()
     }
 
@@ -255,7 +313,8 @@ final class SpeechService {
             guard let self else { return }
 
             // Write to file (always, for fallback support)
-            self.fileWriteQueue.sync {
+            // Use async to avoid blocking the real-time audio thread
+            self.fileWriteQueue.async {
                 do {
                     try self.audioFile?.write(from: buffer)
                 } catch {
@@ -337,13 +396,122 @@ final class SpeechService {
         }
     }
 
+    // MARK: - Local Server Transcription
+
+    @MainActor
+    func testServerConnection() async {
+        serverConnectionState = .testing
+        let urlString = serverURL.trimmingCharacters(in: .whitespaces)
+        guard !urlString.isEmpty,
+              urlString.hasPrefix("http"),
+              let url = URL(string: urlString) else {
+            serverConnectionState = .failed("Invalid URL")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 5
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let http = response as? HTTPURLResponse {
+                let server = http.value(forHTTPHeaderField: "Server") ?? ""
+                if server.lowercased().contains("whisper") {
+                    serverConnectionState = .connected
+                } else {
+                    serverConnectionState = .failed("Not a Whisper server")
+                }
+            } else {
+                serverConnectionState = .failed("Unexpected response")
+            }
+        } catch {
+            serverConnectionState = .failed("Unreachable")
+        }
+    }
+
+    private func transcribeWithLocalServer(url fileURL: URL) async -> String {
+        let urlString = serverURL.trimmingCharacters(in: .whitespaces)
+        guard let endpoint = URL(string: "\(urlString)/inference") else {
+            await MainActor.run { self.error = "Invalid server URL: \(urlString)" }
+            return ""
+        }
+
+        do {
+            let audioData = try Data(contentsOf: fileURL)
+            let boundary = UUID().uuidString
+
+            var request = URLRequest(url: endpoint)
+            request.httpMethod = "POST"
+            request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+            request.timeoutInterval = 30
+
+            var body = Data()
+
+            // file field
+            body.appendString("--\(boundary)\r\n")
+            body.appendString("Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\n")
+            body.appendString("Content-Type: audio/wav\r\n\r\n")
+            body.append(audioData)
+            body.appendString("\r\n")
+
+            // temperature field
+            body.appendString("--\(boundary)\r\n")
+            body.appendString("Content-Disposition: form-data; name=\"temperature\"\r\n\r\n")
+            body.appendString("0.0\r\n")
+
+            // response_format field
+            body.appendString("--\(boundary)\r\n")
+            body.appendString("Content-Disposition: form-data; name=\"response_format\"\r\n\r\n")
+            body.appendString("json\r\n")
+
+            // language field
+            if languageIdentifier != "auto" {
+                body.appendString("--\(boundary)\r\n")
+                body.appendString("Content-Disposition: form-data; name=\"language\"\r\n\r\n")
+                body.appendString("\(languageIdentifier)\r\n")
+            }
+
+            body.appendString("--\(boundary)--\r\n")
+            request.httpBody = body
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+
+            guard let http = response as? HTTPURLResponse else {
+                await MainActor.run { self.error = "Invalid response from server" }
+                return ""
+            }
+
+            guard (200...299).contains(http.statusCode) else {
+                await MainActor.run { self.error = "Server error (HTTP \(http.statusCode))" }
+                return ""
+            }
+
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let text = json["text"] as? String {
+                return Self.cleanTranscription(text)
+            }
+
+            await MainActor.run { self.error = "Unexpected response format from server" }
+            return ""
+        } catch let error as URLError where error.code == .timedOut {
+            await MainActor.run { self.error = "Server timed out" }
+            return ""
+        } catch let error as URLError where error.code == .cannotConnectToHost || error.code == .notConnectedToInternet {
+            await MainActor.run { self.error = "Server unreachable at \(urlString)" }
+            return ""
+        } catch {
+            await MainActor.run { self.error = "Server error: \(error.localizedDescription)" }
+            return ""
+        }
+    }
+
     // MARK: - WhisperKit Transcription
 
     private func transcribeWithWhisperKit(url: URL) async -> String {
         #if canImport(WhisperKit)
         do {
             if whisperKit == nil {
-                whisperKit = try await WhisperKit(model: "openai_whisper-large-v3_turbo", verbose: false)
+                whisperKit = try await WhisperKit(model: "openai_whisper-small", verbose: false)
             }
             guard let whisperKit else { return "" }
 
@@ -374,7 +542,7 @@ final class SpeechService {
         #if canImport(WhisperKit)
         whisperModelState = .downloading
         do {
-            whisperKit = try await WhisperKit(model: "openai_whisper-large-v3_turbo", verbose: false)
+            whisperKit = try await WhisperKit(model: "openai_whisper-small", verbose: false)
             whisperModelState = .downloaded
         } catch {
             whisperModelState = .error(error.localizedDescription)
@@ -542,5 +710,15 @@ final class SpeechService {
         var favorites = favoriteLanguages
         favorites.removeAll { $0 == code }
         favoriteLanguages = favorites
+    }
+}
+
+// MARK: - Data Extension
+
+private extension Data {
+    mutating func appendString(_ string: String) {
+        if let data = string.data(using: .utf8) {
+            append(data)
+        }
     }
 }

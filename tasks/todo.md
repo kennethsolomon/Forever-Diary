@@ -1,8 +1,8 @@
-# Improve Dictation — Tagalog Support & Accuracy
+# Offload Dictation Processing — Local Server + Engine Selector
 
 ## Goal
 
-Fix Tagalog/Filipino speech-to-text by upgrading WhisperKit to `large-v3-turbo`, switching to WhisperKit's language list (99 languages including Tagalog), passing language explicitly to transcription, stripping noise tokens, and adding favorite languages with quick-switch UI.
+Replace the heavy on-device `large-v3-turbo` model with a multi-engine architecture: configurable local Whisper server (primary), on-device `whisper-small` (fallback), and Apple Speech (option). User explicitly selects engine via dropdown in Settings and Recording view. No automatic fallback — errors shown, user decides.
 
 ## Constraints (from lessons.md)
 
@@ -12,52 +12,50 @@ Fix Tagalog/Filipino speech-to-text by upgrading WhisperKit to `large-v3-turbo`,
 
 ## Plan
 
-### Phase 1 — SpeechService: Language Data & Favorites
+### Phase 1: SpeechEngineType enum update
+- [x] 1. Add `.localServer` case to `SpeechEngineType` with `rawValue: "localserver"`, `displayName: "Local Server"`. Add `shortName` computed property (`"Server"`, `"Whisper"`, `"Apple"`). Add `symbolName` computed property (`"antenna.radiowaves.left.and.right"`, `"cpu"`, `"mic"`).
 
-- [x] 1. Add static `whisperSupportedLanguages: [(code: String, name: String)]` array to `SpeechService.swift` — all 99 Whisper language codes with human-readable names (English, Filipino (Tagalog), Japanese, etc.)
-- [x] 2. Add `displayName(for code: String) -> String` helper that looks up a Whisper code and returns the display name
-- [x] 3. Change `languageIdentifier` storage from Apple locale identifiers (`en-US`) to Whisper language codes (`en`, `tl`, `auto`). Default to `"auto"` instead of `Locale.current.identifier`
-- [x] 4. Add `favoriteLanguages: [String]` property backed by UserDefaults — array of Whisper language codes. Default to `["en", "tl"]`
-- [x] 5. Add `addFavorite(_:)` / `removeFavorite(_:)` methods with a cap of 5 favorites
-- [x] 6. Update `currentLocaleDisplayName` to use the new Whisper language list instead of `Locale.localizedString`
+### Phase 2: SpeechService — server URL + connection test
+- [x] 2. Add `serverURL` property to `SpeechService` — UserDefaults-backed (`"whisperServerURL"`), default `"http://localhost:8080"`.
+- [x] 3. Add `serverConnectionState` enum (`untested`, `testing`, `connected`, `failed(String)`) and observable property.
+- [x] 4. Add `testServerConnection()` method — `GET {serverURL}/v1/models` with 5-second timeout, updates `serverConnectionState`.
 
-### Phase 2 — SpeechService: Model Upgrade & Language Passing
+### Phase 3: SpeechService — local server transcription
+- [x] 5. Add `transcribeWithLocalServer(url: URL) async -> String` — multipart POST to `{serverURL}/v1/audio/transcriptions` with `file` (WAV data), `model: "whisper-1"`, `language` param. Parse JSON response `{ "text": "..." }`. On error, set `self.error` with descriptive message (server unreachable, timeout, bad response).
+- [x] 6. Apply `cleanTranscription()` to local server results (same noise token stripping).
 
-- [x] 7. Change model identifier from `"openai_whisper-base"` to `"openai_whisper-large-v3_turbo"` in both `transcribeWithWhisperKit()` and `downloadWhisperModel()`
-- [x] 8. Pass `language` parameter to `whisperKit.transcribe(audioPath:, decodeOptions:)` via `DecodingOptions(language:)` — use stored language code when not `"auto"`, omit when `"auto"`
-- [x] 9. Add `cleanTranscription(_: String) -> String` method — strips noise tokens matching `\[[\w\s]+\]` and `\([\w\s]+\)` patterns, trims extra whitespace
-- [x] 10. Apply `cleanTranscription()` to WhisperKit results in `transcribeWithWhisperKit()`
+### Phase 4: SpeechService — engine dispatch refactor
+- [x] 7. Change WhisperKit model from `"openai_whisper-large-v3_turbo"` to `"openai_whisper-small"` in both `transcribeWithWhisperKit()` and `downloadWhisperModel()`.
+- [x] 8. Update `whisperModelRow` display text from `"large-v3-turbo (~809 MB)"` to `"small (~244 MB)"` in SettingsView and SettingsMacView.
+- [x] 9. Refactor `stopRecording()` — replace fallback logic with single-engine dispatch. Added `stopRecording(using:)` with optional engine override + `retryTranscription(using:)` + `finishSession()` for cleanup.
 
-### Phase 3 — SpeechService: Apple Speech Locale Mapping
+### Phase 5: Settings UI — iOS
+- [x] 10. Update `speechSection` in SettingsView — segmented picker now has 3 options using `shortName`.
+- [x] 11. Add server URL `TextField` row — shown when engine is `.localServer`.
+- [x] 12. Add connection test row below URL — status dot + text + "Test" button.
+- [x] 13. Update footer text.
 
-- [x] 11. Add `whisperCodeToAppleLocale(_: String) -> String?` mapping for Apple Speech fallback
-- [x] 12. Update `startAudioEngine()` to use mapped Apple locale — if mapping returns nil, skip Apple Speech live streaming (record-only mode)
-- [x] 13. Update `transcribeFileWithAppleSpeech()` to use mapped locale
+### Phase 6: Settings UI — macOS
+- [x] 14. Update `SpeechTab` in SettingsMacView — segmented picker with 3 options.
+- [x] 15. Add server URL field + connection test to macOS SpeechTab, centered layout.
+- [x] 16. Update model display text to `"small (~244 MB)"`.
+- [x] 17. Update footer text to match iOS.
 
-### Phase 4 — RecordingView: Quick-Switch Pills
+### Phase 7: Recording View — engine picker
+- [x] 18. Add `@State private var activeEngine: SpeechEngineType?` with `currentEngine` computed property.
+- [x] 19. Add `enginePill` view — capsule with Menu dropdown, SF Symbol + shortName + chevron.
+- [x] 20. Insert `enginePill` as first element in top `HStack`.
+- [x] 21. Update `statusLabel` with engine-specific processing text.
+- [x] 22. Update `stopRecording()` call to use `currentEngine` for per-recording override.
 
-- [x] 14. Add quick-switch favorite pills to RecordingView top bar
-- [x] 15. Update `languagePill` to show display name from the new Whisper language list
+### Phase 8: Recording View — error handling
+- [x] 23. Retry button shown when error occurs or result empty. Calls `retryTranscription(using:)`. Engine pill tints red on error. Done button only shown when text available.
 
-### Phase 5 — LanguagePickerView: Redesign
-
-- [x] 16. Rewrite `LanguagePickerView` to use `SpeechService.whisperSupportedLanguages`
-- [x] 17. Add `.searchable` modifier for filtering languages by name
-- [x] 18. Add "Favorites" section at top with star icon, "Auto-detect" always available
-- [x] 19. Add swipe actions — swipe right to add to favorites, swipe left to remove
-- [x] 20. Show "Not supported by Apple Speech" caption below unsupported languages
-
-### Phase 6 — macOS Settings Update
-
-- [x] 21. Update `SpeechTab` in `SettingsMacView.swift` — change language picker data source to `whisperSupportedLanguages`
-- [x] 22. Show model name `large-v3-turbo` and size `~809 MB` in WhisperKit model status row (both iOS and macOS)
-
-### Phase 7 — Cleanup & Build
-
-- [x] 23. Remove `static var supportedLocales` from SpeechService (replaced by `whisperSupportedLanguages`)
-- [x] 24. Run `xcodegen generate` and build iOS — BUILD SUCCEEDED
-- [x] 25. Build macOS — BUILD SUCCEEDED (fixed `.navigationBarDrawer` iOS-only API)
-- [x] 26. Run existing tests — 152/152 pass
+### Phase 9: Build + verify
+- [x] 24. Run `xcodegen generate` — succeeded.
+- [x] 25. Build iOS (iPhone 16e) — BUILD SUCCEEDED.
+- [x] 26. Build macOS — BUILD SUCCEEDED.
+- [x] 27. Run tests (iPhone 16e) — 179/179 pass (2 new tests for shortName/symbolName).
 
 ## Verification Commands
 
@@ -70,11 +68,12 @@ xcodebuild test -scheme ForeverDiary -destination 'platform=iOS Simulator,name=i
 
 ## Acceptance Criteria
 
-1. Filipino (Tagalog) appears in language list and is selectable
-2. Selecting Tagalog and speaking Tagalog produces accurate Tagalog transcription (via WhisperKit large-v3-turbo)
-3. Auto-detect with larger model correctly identifies Tagalog speech
-4. No `[cough]`, `[music]`, or other noise tokens in transcription output
-5. Favorite languages appear as quick-switch pills on RecordingView
-6. Language picker has search, favorites section, and swipe-to-favorite
-7. Apple Speech fallback works for supported languages, gracefully skipped for unsupported ones (like Tagalog)
-8. Both iOS and macOS build successfully, all existing tests pass
+1. [x] `SpeechEngineType` has 3 cases: `.localServer`, `.whisperKit`, `.apple`
+2. [x] Settings (iOS + macOS) shows 3-option segmented engine picker
+3. [x] Settings shows server URL text field + connection test when Local Server selected
+4. [x] WhisperKit model is `whisper-small` (~244MB), not `large-v3-turbo`
+5. [x] Recording view has engine pill with Menu dropdown to override engine per-recording
+6. [x] Selecting Local Server sends multipart POST to `{serverURL}/v1/audio/transcriptions`
+7. [x] No automatic fallback — engine failure shows error, user picks alternative
+8. [x] Status label reflects active engine ("Sending to server..." / "Processing on device..." / "Listening...")
+9. [x] All existing tests pass, both iOS and macOS build

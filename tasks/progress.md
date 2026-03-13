@@ -1,5 +1,41 @@
 # Progress Log
 
+## Session: 2026-03-13 — Offload Dictation Processing (Local Server + Engine Selector)
+
+### Work Log
+- Phase 1: Added `.localServer` case to `SpeechEngineType` with `shortName` and `symbolName` computed properties
+- Phase 1: Added `ServerConnectionState` enum (untested/testing/connected/failed)
+- Phase 2: Added `serverURL` (UserDefaults-backed, default `http://localhost:8080`) and `serverConnectionState` observable
+- Phase 2: Added `testServerConnection()` — GET to `/v1/models` with 5s timeout
+- Phase 3: Added `transcribeWithLocalServer(url:)` — multipart POST to `/v1/audio/transcriptions`, JSON response parsing, error handling for unreachable/timeout/bad response
+- Phase 4: Changed WhisperKit model from `openai_whisper-large-v3_turbo` to `openai_whisper-small` (both transcribe + download)
+- Phase 4: Refactored `stopRecording()` to `stopRecording(using:)` with optional engine override, removed fallback chain, added switch dispatch
+- Phase 4: Added `retryTranscription(using:)` for re-attempting on existing audio file
+- Phase 4: Added `finishSession()` for deferred temp file cleanup (supports retry)
+- Phase 5: Updated iOS SettingsView — 3-option segmented picker using `shortName`, server URL TextField + connection test row, updated footer
+- Phase 6: Updated macOS SettingsMacView — same 3-option picker, server URL + connection test, updated model text + footer
+- Phase 7: Added `enginePill` to RecordingView — capsule with Menu dropdown, SF Symbol + shortName, per-recording override via `activeEngine` state
+- Phase 7: Updated status label with engine-specific processing text
+- Phase 8: Added retry button + error-aware Done/Retry button layout, engine pill tints red on error
+- Phase 9: Fixed test — `testSpeechEngineTypeAllCasesCount` updated from 2 to 3, added `testSpeechEngineTypeShortNames` and `testSpeechEngineTypeSymbolNames`
+- Phase 9: xcodegen generate, iOS BUILD SUCCEEDED, macOS BUILD SUCCEEDED, 179/179 tests pass
+
+### Files Modified
+- ForeverDiary/Services/SpeechService.swift
+- ForeverDiary/Views/Speech/RecordingView.swift
+- ForeverDiary/Views/Settings/SettingsView.swift
+- ForeverDiaryMac/Views/Settings/SettingsMacView.swift
+- ForeverDiaryTests/SpeechServiceTests.swift
+
+### Test Results
+| Command | Expected | Actual | Status |
+|---------|----------|--------|--------|
+| xcodebuild build iOS (iPhone 16e) | BUILD SUCCEEDED | BUILD SUCCEEDED | PASS |
+| xcodebuild build macOS | BUILD SUCCEEDED | BUILD SUCCEEDED | PASS |
+| xcodebuild test iOS (iPhone 16e) | 179/179 pass | 179/179 pass | PASS |
+
+---
+
 ## Session: 2026-03-13 — Improve Dictation (Tagalog Support & Accuracy)
 
 ### Work Log

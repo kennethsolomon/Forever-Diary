@@ -2,7 +2,7 @@
 
 ## Summary
 
-Added dual-engine speech-to-text subsystem (Apple Speech + WhisperKit) with shared service, platform-specific UI, and new SPM dependency.
+Added tri-engine speech-to-text subsystem (Local Server via whisper.cpp, WhisperKit on-device, Apple Speech) with shared service, platform-specific UI, and new SPM dependency.
 
 ## Type of Architectural Change
 
@@ -11,7 +11,7 @@ Added dual-engine speech-to-text subsystem (Apple Speech + WhisperKit) with shar
 ## What Changed
 
 **New Service:**
-- `ForeverDiary/Services/SpeechService.swift` — `@Observable` service with dual-engine transcription, audio recording, and model management
+- `ForeverDiary/Services/SpeechService.swift` — `@Observable` service with tri-engine transcription (Local Server, WhisperKit, Apple Speech), audio recording, server connection testing, and model management
 
 **New Views:**
 - `ForeverDiary/Views/Speech/RecordingView.swift` — Recording sheet (iOS) / popover (macOS) with waveform, timer, live transcript
@@ -39,7 +39,7 @@ Added dual-engine speech-to-text subsystem (Apple Speech + WhisperKit) with shar
 
 ## Detailed Changes
 
-Added a new speech-to-text subsystem that provides voice dictation for diary entries. The architecture uses a dual-engine approach: Apple Speech (SFSpeechRecognizer) streams live transcription during recording, while WhisperKit runs on-device Whisper inference on the recorded audio file after recording stops. Both engines always have access to the recorded .wav file, enabling automatic fallback if the primary engine returns empty results.
+Added a new speech-to-text subsystem that provides voice dictation for diary entries. The architecture uses a tri-engine approach: (1) Local Server — sends recorded audio to a whisper.cpp server on the local network via HTTP POST to `/inference`, validated by Server header; (2) WhisperKit — on-device Whisper inference using whisper-small model; (3) Apple Speech — SFSpeechRecognizer streams live transcription during recording. All engines write to a shared .wav temp file. User explicitly selects engine — no automatic fallback chain. `NSAllowsLocalNetworking` ATS exception enables plaintext HTTP to local server.
 
 ## Before & After
 
@@ -63,7 +63,7 @@ Backward compatibility confirmed. No breaking changes — speech is additive. Ex
 
 ## Verification
 
-- [x] All affected code paths tested (28 unit tests for SpeechService)
+- [x] All affected code paths tested (75 unit tests for SpeechService, 197 total)
 - [x] Related documentation updated (CHANGELOG.md)
 - [x] No breaking changes (or breaking changes documented)
 - [x] Dependent systems verified (iOS + macOS builds pass)
