@@ -2,8 +2,6 @@
   <img src="Logo/forever-diary-logo.png" alt="Forever Diary" width="500">
 </p>
 
-<h1 align="center">Forever Diary</h1>
-
 <p align="center">A daily diary iOS app that layers your entries by date across years — so you can revisit what you wrote on this day, every year, forever. Offline-first with optional AWS cloud sync.</p>
 
 <p align="center">
