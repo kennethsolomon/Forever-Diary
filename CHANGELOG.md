@@ -9,16 +9,20 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ## [Unreleased]
 
 ### Added
-- Voice dictation with dual-engine speech-to-text: Apple Speech (streaming) + WhisperKit large-v3-turbo (on-device, ~809 MB) with automatic fallback if primary engine returns empty
+- Voice dictation with tri-engine speech-to-text: Local Server (whisper.cpp, primary), WhisperKit small (on-device fallback), and Apple Speech (streaming) — user selects engine explicitly, no automatic fallback
+- Local whisper.cpp server engine: send recordings to a Mac running whisper-server over local network for fast transcription with large models (e.g., large-v3-turbo)
+- Server connection testing with whisper.cpp identity validation (checks Server response header)
 - 99-language support via WhisperKit language list including Filipino (Tagalog), with explicit language passing to transcription for improved accuracy
 - Favorite languages (up to 5) with quick-switch pills on recording view for fast language switching
 - Language picker redesigned with search, favorites section with star icons, swipe-to-add/remove favorites, and Apple Speech compatibility notes
-- Noise token cleanup: strips `[cough]`, `[music]`, `(laughter)`, `[BLANK_AUDIO]` and similar artifacts from WhisperKit output
-- Apple Speech locale mapping with graceful fallback — unsupported languages (e.g., Tagalog) skip Apple Speech and use WhisperKit only
-- Recording UI with live waveform visualization, countdown timer (5-min cap), and real-time transcript preview (iOS sheet / macOS popover)
-- Speech engine picker in Settings (Apple Speech or WhisperKit) with language selection and WhisperKit model download/delete management (iOS + macOS)
+- Noise token cleanup: strips `[cough]`, `[music]`, `(laughter)`, `[BLANK_AUDIO]` and similar artifacts from transcription output
+- Apple Speech locale mapping with graceful fallback — unsupported languages (e.g., Tagalog) skip Apple Speech and use WhisperKit/Server only
+- Recording UI with live waveform visualization, engine/language pills, countdown timer (5-min cap), and real-time transcript preview (iOS sheet / macOS popover)
+- Speech engine picker in Settings (Server, WhisperKit, or Apple Speech) with server URL config, connection test, language selection, and WhisperKit model management (iOS + macOS)
 - Mic button in Home and Entry Detail action bars for quick voice-to-text entry on both iOS and macOS
-- 53 new XCTest cases for SpeechService covering enums, initial state, language controls, transcription cleanup, locale mapping, favorites, and state reset (now 177 total)
+- Whisper server setup guide (`docs/whisper-server-setup.md`) with install, model download, launch agent, and troubleshooting
+- NSAllowsLocalNetworking ATS exception for plaintext HTTP to local whisper server
+- 75 new XCTest cases for SpeechService covering enums, initial state, engine dispatch, server connection, language controls, transcription cleanup, locale mapping, favorites, and edge cases (now 197 total)
 - Lightweight sync change-check: `GET /sync?check=true&since=<ts>` returns `{ hasChanges, serverTime }` without fetching item data — periodic sync now polls cheaply before doing a full pull
 - "Updated from another device" toast on iOS and macOS — appears when `pullRemote()` applies remote entry changes, auto-dismisses after 3 seconds
 - 11 new XCTest cases covering change-check guard clauses, toast trigger/dismiss/retrigger, LWW return values, and periodic sync lifecycle (now 122 total)

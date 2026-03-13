@@ -14,8 +14,8 @@
 | 7 | /commit | done | b32e891, d686bda, 0223b96 |
 | 8 | /debug | skipped | bugs fixed during testing (endpoint, connectivity, language) |
 | 9 | /security-check | done | clean on attempt 2 — M2+L3 fixed, all 0 |
-| 10 | /commit | >> next << | |
-| 11 | /review | not yet | |
-| 12 | /commit | not yet | |
-| 13 | /finish-feature | not yet | |
+| 10 | /commit | done | 2698ddb, 3542e18 |
+| 11 | /review | done | 2 doc nitpicks on attempt 2, fixed + committed 9ec2a57 |
+| 12 | /commit | done | 9ec2a57 |
+| 13 | /finish-feature | >> next << | |
 | 14 | /release | not yet | |
