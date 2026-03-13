@@ -28,10 +28,10 @@ Other model options (smaller = faster, less accurate):
 ## Run the Server
 
 ```bash
-whisper-server -m ~/ggml-large-v3-turbo.bin --port 8080
+whisper-server -m ~/ggml-large-v3-turbo.bin --port 8080 --host 0.0.0.0
 ```
 
-The server starts on `http://localhost:8080` and exposes an OpenAI-compatible API.
+The `--host 0.0.0.0` flag makes the server accessible from other devices on your network (e.g., your iPhone). The server starts on `http://localhost:8080` and uses the whisper.cpp `/inference` API.
 
 ## Configure the App
 

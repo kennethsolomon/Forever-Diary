@@ -401,7 +401,9 @@ final class SpeechService {
     func testServerConnection() async {
         serverConnectionState = .testing
         let urlString = serverURL.trimmingCharacters(in: .whitespaces)
-        guard let url = URL(string: "\(urlString)/v1/models") else {
+        guard !urlString.isEmpty,
+              urlString.hasPrefix("http"),
+              let url = URL(string: urlString) else {
             serverConnectionState = .failed("Invalid URL")
             return
         }
@@ -411,10 +413,10 @@ final class SpeechService {
 
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
-            if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
+            if let _ = response as? HTTPURLResponse {
                 serverConnectionState = .connected
             } else {
-                serverConnectionState = .failed("Server returned error")
+                serverConnectionState = .failed("Unexpected response")
             }
         } catch {
             serverConnectionState = .failed("Unreachable")
@@ -423,7 +425,7 @@ final class SpeechService {
 
     private func transcribeWithLocalServer(url fileURL: URL) async -> String {
         let urlString = serverURL.trimmingCharacters(in: .whitespaces)
-        guard let endpoint = URL(string: "\(urlString)/v1/audio/transcriptions") else {
+        guard let endpoint = URL(string: "\(urlString)/inference") else {
             await MainActor.run { self.error = "Invalid server URL: \(urlString)" }
             return ""
         }
@@ -446,10 +448,15 @@ final class SpeechService {
             body.append(audioData)
             body.append("\r\n".data(using: .utf8)!)
 
-            // model field
+            // temperature field
             body.append("--\(boundary)\r\n".data(using: .utf8)!)
-            body.append("Content-Disposition: form-data; name=\"model\"\r\n\r\n".data(using: .utf8)!)
-            body.append("whisper-1\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"temperature\"\r\n\r\n".data(using: .utf8)!)
+            body.append("0.0\r\n".data(using: .utf8)!)
+
+            // response_format field
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"response_format\"\r\n\r\n".data(using: .utf8)!)
+            body.append("json\r\n".data(using: .utf8)!)
 
             // language field
             if languageIdentifier != "auto" {
