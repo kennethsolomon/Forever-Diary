@@ -84,6 +84,7 @@ xcodebuild test -scheme ForeverDiary -destination 'platform=iOS Simulator,name=i
 ## Key Documentation
 
 - Implementation plan: `docs/plans/2026-03-10-forever-diary-v1-implementation.md`
+- Whisper server setup: `docs/whisper-server-setup.md`
 - Changelog: `CHANGELOG.md`
 - Architectural decisions: `.claude/docs/architectural_change_log/`
 
@@ -94,6 +95,7 @@ xcodebuild test -scheme ForeverDiary -destination 'platform=iOS Simulator,name=i
 - Auth uses AWS Cognito; tokens stored in Keychain via `KeychainHelper`
 - Permissions: location (when-in-use), photo library, camera
 - XcodeGen generates `.xcodeproj` from `project.yml` — do not edit `.xcodeproj` directly
+- Speech-to-text has 3 engines: Local Server (whisper.cpp, primary), WhisperKit on-device (whisper-small, fallback), Apple Speech. No automatic fallback — user selects engine explicitly. See `docs/whisper-server-setup.md` for server setup.
 
 ## Workflow
 

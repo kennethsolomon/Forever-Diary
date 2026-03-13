@@ -13,20 +13,35 @@ final class SpeechServiceTests: XCTestCase {
     // MARK: - SpeechEngineType
 
     func testSpeechEngineTypeRawValues() {
+        XCTAssertEqual(SpeechEngineType.localServer.rawValue, "localserver")
         XCTAssertEqual(SpeechEngineType.apple.rawValue, "apple")
         XCTAssertEqual(SpeechEngineType.whisperKit.rawValue, "whisperkit")
     }
 
     func testSpeechEngineTypeDisplayNames() {
+        XCTAssertEqual(SpeechEngineType.localServer.displayName, "Local Server")
         XCTAssertEqual(SpeechEngineType.apple.displayName, "Apple Speech")
         XCTAssertEqual(SpeechEngineType.whisperKit.displayName, "WhisperKit")
     }
 
+    func testSpeechEngineTypeShortNames() {
+        XCTAssertEqual(SpeechEngineType.localServer.shortName, "Server")
+        XCTAssertEqual(SpeechEngineType.whisperKit.shortName, "Whisper")
+        XCTAssertEqual(SpeechEngineType.apple.shortName, "Apple")
+    }
+
+    func testSpeechEngineTypeSymbolNames() {
+        XCTAssertEqual(SpeechEngineType.localServer.symbolName, "antenna.radiowaves.left.and.right")
+        XCTAssertEqual(SpeechEngineType.whisperKit.symbolName, "cpu")
+        XCTAssertEqual(SpeechEngineType.apple.symbolName, "mic")
+    }
+
     func testSpeechEngineTypeAllCasesCount() {
-        XCTAssertEqual(SpeechEngineType.allCases.count, 2)
+        XCTAssertEqual(SpeechEngineType.allCases.count, 3)
     }
 
     func testSpeechEngineTypeInitFromRawValue() {
+        XCTAssertEqual(SpeechEngineType(rawValue: "localserver"), .localServer)
         XCTAssertEqual(SpeechEngineType(rawValue: "apple"), .apple)
         XCTAssertEqual(SpeechEngineType(rawValue: "whisperkit"), .whisperKit)
     }

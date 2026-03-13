@@ -288,16 +288,74 @@ private struct SpeechTab: View {
                     }
                 )) {
                     ForEach(SpeechEngineType.allCases, id: \.rawValue) { engine in
-                        Text(engine.displayName).tag(engine)
+                        Text(engine.shortName).tag(engine)
                     }
                 }
                 .pickerStyle(.segmented)
                 .frame(maxWidth: 300)
 
-                Text("The other engine is used as fallback if the primary fails.")
+                Text("Selected engine is used for all recordings. Switch per-recording on the recording screen.")
                     .font(.system(.caption, design: .rounded))
                     .foregroundStyle(Color("textSecondary"))
                     .multilineTextAlignment(.center)
+
+                // Server URL + connection test
+                if speechService.engineChoice == .localServer {
+                    Divider()
+                        .frame(maxWidth: 300)
+
+                    HStack {
+                        Text("Server URL")
+                            .font(.system(.subheadline, design: .rounded))
+                            .foregroundStyle(Color("textPrimary"))
+                        Spacer()
+                        TextField("http://localhost:8080", text: Binding(
+                            get: { speechService.serverURL },
+                            set: { speechService.serverURL = $0 }
+                        ))
+                        .font(.system(.subheadline, design: .rounded))
+                        .textFieldStyle(.plain)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 200)
+                    }
+                    .frame(maxWidth: 300)
+
+                    HStack {
+                        switch speechService.serverConnectionState {
+                        case .untested:
+                            EmptyView()
+                        case .testing:
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Testing...")
+                                .font(.system(.caption, design: .rounded))
+                                .foregroundStyle(Color("textSecondary"))
+                        case .connected:
+                            Image(systemName: "circle.fill")
+                                .font(.system(size: 8))
+                                .foregroundStyle(Color("habitComplete"))
+                            Text("Connected")
+                                .font(.system(.caption, design: .rounded))
+                                .foregroundStyle(Color("habitComplete"))
+                        case .failed(let reason):
+                            Image(systemName: "circle.fill")
+                                .font(.system(size: 8))
+                                .foregroundStyle(Color("destructive"))
+                            Text(reason)
+                                .font(.system(.caption, design: .rounded))
+                                .foregroundStyle(Color("destructive"))
+                        }
+                        Spacer()
+                        Button("Test") {
+                            Task { await speechService.testServerConnection() }
+                        }
+                        .font(.system(.caption, design: .rounded))
+                        .foregroundStyle(Color("accentBright"))
+                        .buttonStyle(.plain)
+                        .disabled(speechService.serverConnectionState == .testing)
+                    }
+                    .frame(maxWidth: 300)
+                }
 
                 Divider()
                     .frame(maxWidth: 300)
@@ -331,7 +389,7 @@ private struct SpeechTab: View {
                             Text("WhisperKit Model")
                                 .font(.system(.subheadline, design: .rounded))
                                 .foregroundStyle(Color("textPrimary"))
-                            Text("large-v3-turbo (~809 MB)")
+                            Text("small (~244 MB)")
                                 .font(.system(.caption2, design: .rounded))
                                 .foregroundStyle(Color("textSecondary"))
                         }

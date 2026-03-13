@@ -7,11 +7,18 @@ struct RecordingView: View {
     let onTranscription: (String) -> Void
 
     @State private var showLanguagePicker = false
+    @State private var activeEngine: SpeechEngineType?
+
+    private var currentEngine: SpeechEngineType {
+        activeEngine ?? speechService.engineChoice
+    }
 
     var body: some View {
         VStack(spacing: 20) {
-            // Top row: language pill + quick-switch favorites + time remaining
+            // Top row: engine pill + language pill + quick-switch favorites + time remaining
             HStack(spacing: 6) {
+                enginePill
+
                 languagePill
 
                 quickSwitchPills
@@ -39,8 +46,8 @@ struct RecordingView: View {
             // Status label
             statusLabel
 
-            // Stop button
-            stopButton
+            // Stop / Done / Retry buttons
+            actionButtons
                 .padding(.bottom, 8)
         }
         .padding(.horizontal, 24)
@@ -51,6 +58,8 @@ struct RecordingView: View {
         .onDisappear {
             if speechService.isRecording || speechService.isProcessing {
                 speechService.cancelRecording()
+            } else {
+                speechService.finishSession()
             }
         }
         #if os(iOS)
@@ -63,6 +72,46 @@ struct RecordingView: View {
                 .frame(minWidth: 280, minHeight: 400)
         }
         #endif
+    }
+
+    // MARK: - Engine Pill
+
+    private var enginePill: some View {
+        Menu {
+            ForEach(SpeechEngineType.allCases, id: \.rawValue) { engine in
+                Button {
+                    withAnimation(.spring(response: 0.25)) {
+                        activeEngine = engine
+                    }
+                } label: {
+                    Label {
+                        Text(engine.displayName)
+                    } icon: {
+                        Image(systemName: engine.symbolName)
+                    }
+                    if currentEngine == engine {
+                        Image(systemName: "checkmark")
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: currentEngine.symbolName)
+                    .font(.system(.caption2))
+                Text(currentEngine.shortName)
+                    .font(.system(.caption, design: .rounded, weight: .medium))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+            }
+            .foregroundStyle(speechService.error != nil ? Color("destructive") : Color("textSecondary"))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                Capsule()
+                    .fill(Color("surfaceCard"))
+            )
+        }
+        .menuStyle(.borderlessButton)
     }
 
     // MARK: - Language Pill
@@ -96,7 +145,7 @@ struct RecordingView: View {
     private var quickSwitchPills: some View {
         let favorites = speechService.favoriteLanguages.filter { $0 != speechService.languageIdentifier }
         // Disable during Apple Speech recording — live recognizer uses the language set at start
-        let isDisabled = speechService.isRecording && speechService.engineChoice == .apple
+        let isDisabled = speechService.isRecording && currentEngine == .apple
         if !favorites.isEmpty {
             HStack(spacing: 4) {
                 ForEach(favorites, id: \.self) { code in
@@ -166,10 +215,10 @@ struct RecordingView: View {
                 HStack(spacing: 6) {
                     ProgressView()
                         .controlSize(.small)
-                    Text("Processing...")
+                    Text(processingText)
                 }
             } else if speechService.isRecording {
-                Text(speechService.engineChoice == .apple ? "Listening..." : "Recording...")
+                Text(currentEngine == .apple ? "Listening..." : "Recording...")
             } else if let error = speechService.error {
                 Text(error)
                     .foregroundStyle(Color("destructive"))
@@ -181,18 +230,27 @@ struct RecordingView: View {
         .foregroundStyle(Color("textSecondary"))
     }
 
-    // MARK: - Stop / Done Button
+    private var processingText: String {
+        switch currentEngine {
+        case .localServer: return "Sending to server..."
+        case .whisperKit: return "Processing on device..."
+        case .apple: return "Processing..."
+        }
+    }
 
-    private var stopButton: some View {
+    // MARK: - Action Buttons (Stop / Done / Retry)
+
+    private var actionButtons: some View {
         Group {
             if speechService.isRecording {
                 Button {
                     Task {
-                        let text = await speechService.stopRecording()
+                        let text = await speechService.stopRecording(using: currentEngine)
                         if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             onTranscription(text)
+                            dismiss()
                         }
-                        dismiss()
+                        // If empty + error, stay on screen so user can retry or switch engine
                     }
                 } label: {
                     HStack(spacing: 8) {
@@ -206,26 +264,55 @@ struct RecordingView: View {
                     .background(Capsule().fill(Color("destructive")))
                 }
                 .buttonStyle(.plain)
-            } else if !speechService.isProcessing && !speechService.transcribedText.isEmpty {
-                // Timer expired — recording stopped, result ready
-                Button {
-                    let text = speechService.transcribedText
-                    if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        onTranscription(text)
+            } else if !speechService.isProcessing {
+                HStack(spacing: 12) {
+                    // Retry button — shown when there's an error or empty result
+                    if speechService.error != nil || speechService.transcribedText.isEmpty {
+                        Button {
+                            Task {
+                                let text = await speechService.retryTranscription(using: currentEngine)
+                                if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                    onTranscription(text)
+                                    dismiss()
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 12, weight: .bold))
+                                Text("Retry")
+                                    .font(.system(.body, design: .rounded, weight: .semibold))
+                            }
+                            .foregroundStyle(Color("accentBright"))
+                            .frame(height: 44)
+                            .padding(.horizontal, 20)
+                            .background(Capsule().strokeBorder(Color("accentBright"), lineWidth: 1.5))
+                        }
+                        .buttonStyle(.plain)
                     }
-                    dismiss()
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 12, weight: .bold))
-                        Text("Done")
-                            .font(.system(.body, design: .rounded, weight: .semibold))
+
+                    // Done button — shown when there's transcribed text
+                    if !speechService.transcribedText.isEmpty {
+                        Button {
+                            let text = speechService.transcribedText
+                            if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                onTranscription(text)
+                            }
+                            dismiss()
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 12, weight: .bold))
+                                Text("Done")
+                                    .font(.system(.body, design: .rounded, weight: .semibold))
+                            }
+                            .foregroundStyle(.white)
+                            .frame(width: 140, height: 44)
+                            .background(Capsule().fill(Color("accentBright")))
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .foregroundStyle(.white)
-                    .frame(width: 140, height: 44)
-                    .background(Capsule().fill(Color("accentBright")))
                 }
-                .buttonStyle(.plain)
             }
         }
     }
@@ -340,7 +427,7 @@ struct LanguagePickerView: View {
 
                 // Show Apple Speech unsupported note
                 if code != "auto" && speechService.engineChoice == .apple && SpeechService.whisperCodeToAppleLocale(code) == nil {
-                    Text("Not supported by Apple Speech — WhisperKit will be used")
+                    Text("Not supported by Apple Speech")
                         .font(.system(.caption2, design: .rounded))
                         .foregroundStyle(Color("textSecondary"))
                 }

@@ -1,65 +1,87 @@
-# Improve Dictation — Tagalog Support & Accuracy
+# Offload Dictation Processing — Local Server + Engine Selector
 
 ## Problem Statement
 
-The speech-to-text dictation feature has poor Tagalog support:
-1. **No Filipino/Tagalog in the language list** — list comes from `SFSpeechRecognizer.supportedLocales()` which lacks `fil-PH` on the user's device. Only `en-PH` (English Philippines) appears, which doesn't understand Tagalog.
-2. **WhisperKit auto-detect fails for Tagalog** — the `whisper-base` model defaults to English when hearing Tagalog.
-3. **WhisperKit ignores language selection** — `transcribe()` is called without a `language` parameter, so the picker has no effect on WhisperKit.
-4. **Noise artifacts in output** — `[cough]`, `[music]`, `[laughter]` tokens appear in transcribed text.
-5. **User speaks Taglish** (mixed Tagalog + English) — needs a model that handles code-switching.
+The `whisper-large-v3-turbo` model (~809MB) causes:
+1. **Excessive processing time** — batch transcription after recording stops takes too long
+2. **Phone overheating** — iPhone 14 Pro Max heats up running the large model on Neural Engine
+3. **Overkill for short recordings** — user's typical recordings are < 10 seconds
 
 ## Key Decisions
 
-1. **Upgrade WhisperKit model** from `whisper-base` (~74MB) to `whisper-large-v3-turbo` (~809MB) — same size as medium, large-v3 quality, best accuracy-to-speed ratio for multilingual
-2. **Use WhisperKit's language list** — WhisperKit supports 99 languages including Tagalog (`tl`). Show WhisperKit-supported languages instead of only Apple's `SFSpeechRecognizer.supportedLocales()`
-3. **Pass language explicitly** to `whisperKit.transcribe(language:)` when a language is selected — eliminates bad auto-detection
-4. **Keep "Auto-detect" option** — works better with the larger model, still available for users who want it
-5. **Post-process transcription output** — strip noise tokens (`[cough]`, `[music]`, `[laughter]`, `[applause]`, etc.) from WhisperKit results
-6. **Favorite languages with quick-switch** — pin user's preferred languages (e.g., English + Filipino) at the top of the picker for fast switching
-7. **Apple Speech becomes fallback-only** — WhisperKit is the recommended primary for Tagalog since Apple Speech doesn't support Filipino on-device
+1. **Add Local Server engine** — OpenAI-compatible API (`POST /v1/audio/transcriptions`) pointing to user's laptop running whisper.cpp server or similar
+2. **Downgrade on-device WhisperKit** from `large-v3-turbo` (~809MB) to `whisper-small` (~244MB) — lighter, less heat, adequate as backup
+3. **Keep Apple Speech** as a third engine option (no Tagalog, but useful for English)
+4. **Explicit engine selection via dropdown** — no automatic fallback chain; user picks which engine to use
+5. **Engine picker in two places** — Settings (default) + Recording view (per-recording override)
+6. **Error handling** — if selected engine fails, show error and let user pick different engine (no silent fallback)
+7. **Configurable server URL** — editable in Settings, default `http://localhost:8080`
 
-## Chosen Approach: WhisperKit-first with large-v3-turbo
+## Chosen Approach: Multi-Engine with Explicit Selection
+
+### Engine Options
+
+| Engine | Where it runs | Model | Tagalog? | Needs network? |
+|--------|--------------|-------|----------|----------------|
+| Local Server | User's laptop (whisper.cpp server) | large-v3-turbo (or any) | Yes | Yes (LAN) |
+| WhisperKit | On-device (iPhone) | whisper-small (~244MB) | Yes | No |
+| Apple Speech | On-device (Apple framework) | Apple's built-in | No | No |
+
+### API Format (Local Server)
+
+OpenAI-compatible endpoint — works with whisper.cpp server, faster-whisper-server, LocalAI, or OpenAI cloud:
+
+```
+POST {serverURL}/v1/audio/transcriptions
+Content-Type: multipart/form-data
+
+file: <audio.wav>
+model: whisper-1
+language: tl  (or en, ja, etc.)
+```
+
+Response: `{ "text": "transcribed text here" }`
+
+### UI Changes
+
+#### Settings
+- **Default Engine** dropdown: Local Server / WhisperKit / Apple Speech
+- **Server URL** text field (shown when Local Server selected or always visible)
+- **WhisperKit Model** section updated: shows whisper-small (~244MB) instead of large-v3-turbo
+- Keep existing: favorite languages, language picker
+
+#### Recording View
+- **Engine picker** (segmented control or dropdown) — defaults to Settings choice, can override per-recording
+- Keep existing: language quick-switch pills, waveform, timer
+
+### Error Handling
+
+- Local Server unreachable → show error alert: "Server unreachable at {URL}. Switch engine or check server."
+- WhisperKit model not downloaded → show error: "WhisperKit model not downloaded. Download in Settings or switch engine."
+- Apple Speech fails → show error with reason
+- No silent fallback — user always chooses
 
 ### Changes Required
 
 #### 1. SpeechService.swift
-- Change model from `openai_whisper-base` to `openai_whisper-large-v3-turbo`
-- Pass `language` parameter to `whisperKit.transcribe(language:)` when not "auto"
-- Map locale identifiers to Whisper language codes (e.g., `fil-PH` → `tl`, `en-US` → `en`)
-- Add post-processing to strip noise tokens from transcription output
-- Add WhisperKit-supported languages list (static, since Whisper's language set is fixed)
-- Add favorite languages storage (UserDefaults array)
+- Add `TranscriptionEngine` enum: `.localServer`, `.whisperKit`, `.appleSpeech`
+- Add `transcribeWithLocalServer(url:language:)` — multipart POST to configurable endpoint
+- Change WhisperKit model from `openai_whisper-large-v3_turbo` to `openai_whisper-small`
+- Add `serverURL` property (stored in UserDefaults)
+- Add `selectedEngine` property (stored in UserDefaults)
+- Modify `transcribe()` to dispatch to selected engine, no fallback chain
+- Return errors explicitly instead of silently falling back
 
-#### 2. RecordingView.swift / LanguagePickerView
-- Show merged language list: WhisperKit languages + Apple Speech locales (deduplicated)
-- Favorites section pinned at top of language picker
-- Add/remove favorite via swipe or toggle
-- Quick-switch pill on RecordingView shows favorites for one-tap switching
+#### 2. RecordingView.swift
+- Add engine picker (segmented control or menu) defaulting to Settings choice
+- Show engine-specific status (e.g., "Sending to server..." vs "Processing on device...")
+- Handle engine errors with alert + engine switch option
 
 #### 3. SettingsView.swift
-- Update model size display (~809MB instead of ~40-75MB)
-- Add "Favorite Languages" management section
-
-### WhisperKit Language Code Mapping (subset)
-
-| Display Name | Whisper Code | Apple Locale |
-|-------------|-------------|-------------|
-| Filipino (Tagalog) | `tl` | not supported |
-| English | `en` | `en-US`, `en-PH`, etc. |
-| Japanese | `ja` | `ja-JP` |
-| Korean | `ko` | `ko-KR` |
-| Chinese | `zh` | `zh-CN`, `zh-TW` |
-
-### Noise Tokens to Strip
-
-`[cough]`, `[music]`, `[laughter]`, `[applause]`, `[silence]`, `[noise]`, `[blank_audio]`, `(cough)`, `(music)`, etc. — regex pattern: `\[[\w\s]+\]|\([\w\s]+\)`
-
-### Affected Files
-
-- **Modified:** `ForeverDiary/Services/SpeechService.swift` — model upgrade, language passing, post-processing, favorites
-- **Modified:** `ForeverDiary/Views/Speech/RecordingView.swift` — quick-switch pill, updated language picker
-- **Modified:** `ForeverDiary/Views/Settings/SettingsView.swift` — model size, favorite languages
+- Add "Default Engine" picker
+- Add "Server URL" text field
+- Update WhisperKit model info (~244MB whisper-small)
+- Keep favorite languages section
 
 ### Constraints (from lessons.md)
 
