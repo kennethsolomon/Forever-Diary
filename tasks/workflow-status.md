@@ -17,5 +17,5 @@
 | 10 | /commit | done | 2698ddb, 3542e18 |
 | 11 | /review | done | 2 doc nitpicks on attempt 2, fixed + committed 9ec2a57 |
 | 12 | /commit | done | 9ec2a57 |
-| 13 | /finish-feature | >> next << | |
-| 14 | /release | not yet | |
+| 13 | /finish-feature | done | PR #9 |
+| 14 | /release | skipped | user opted to skip |

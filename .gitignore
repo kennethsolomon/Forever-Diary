@@ -36,6 +36,9 @@ Package.resolved
 # Node
 node_modules/
 
+# Build output
+build/
+
 # Misc
 *.swp
 *.lock
