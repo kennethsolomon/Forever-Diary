@@ -205,4 +205,172 @@ final class SpeechServiceTests: XCTestCase {
         service.deleteWhisperModel()
         XCTAssertEqual(service.whisperModelState, .notDownloaded)
     }
+
+    // MARK: - Clean Transcription
+
+    func testCleanTranscriptionRemovesBracketedTokens() {
+        let input = "Hello [cough] world"
+        XCTAssertEqual(SpeechService.cleanTranscription(input), "Hello world")
+    }
+
+    func testCleanTranscriptionRemovesParenthesizedTokens() {
+        let input = "Hello (laughter) world"
+        XCTAssertEqual(SpeechService.cleanTranscription(input), "Hello world")
+    }
+
+    func testCleanTranscriptionRemovesMultipleTokens() {
+        let input = "[music] Hello [cough] how are you (applause) today [BLANK_AUDIO]"
+        XCTAssertEqual(SpeechService.cleanTranscription(input), "Hello how are you today")
+    }
+
+    func testCleanTranscriptionPreservesNormalText() {
+        let input = "Kumain na ako kanina sa labas"
+        XCTAssertEqual(SpeechService.cleanTranscription(input), "Kumain na ako kanina sa labas")
+    }
+
+    func testCleanTranscriptionHandlesEmptyString() {
+        XCTAssertEqual(SpeechService.cleanTranscription(""), "")
+    }
+
+    func testCleanTranscriptionHandlesOnlyNoiseTokens() {
+        let input = "[cough] [music] (silence)"
+        XCTAssertEqual(SpeechService.cleanTranscription(input), "")
+    }
+
+    func testCleanTranscriptionCollapsesMultipleSpaces() {
+        let input = "Hello  [cough]   world"
+        XCTAssertEqual(SpeechService.cleanTranscription(input), "Hello world")
+    }
+
+    func testCleanTranscriptionTrimsWhitespace() {
+        let input = "  [cough] Hello world [music]  "
+        XCTAssertEqual(SpeechService.cleanTranscription(input), "Hello world")
+    }
+
+    // MARK: - Apple Speech Locale Mapping
+
+    func testWhisperCodeToAppleLocaleReturnsCorrectMapping() {
+        XCTAssertEqual(SpeechService.whisperCodeToAppleLocale("en"), "en-US")
+        XCTAssertEqual(SpeechService.whisperCodeToAppleLocale("ja"), "ja-JP")
+        XCTAssertEqual(SpeechService.whisperCodeToAppleLocale("ko"), "ko-KR")
+        XCTAssertEqual(SpeechService.whisperCodeToAppleLocale("zh"), "zh-CN")
+        XCTAssertEqual(SpeechService.whisperCodeToAppleLocale("de"), "de-DE")
+        XCTAssertEqual(SpeechService.whisperCodeToAppleLocale("fr"), "fr-FR")
+    }
+
+    func testWhisperCodeToAppleLocaleReturnsNilForUnsupported() {
+        XCTAssertNil(SpeechService.whisperCodeToAppleLocale("tl"), "Tagalog has no Apple Speech support")
+        XCTAssertNil(SpeechService.whisperCodeToAppleLocale("haw"), "Hawaiian has no Apple Speech support")
+        XCTAssertNil(SpeechService.whisperCodeToAppleLocale("la"), "Latin has no Apple Speech support")
+    }
+
+    func testWhisperCodeToAppleLocaleReturnsNilForInvalidCode() {
+        XCTAssertNil(SpeechService.whisperCodeToAppleLocale("xyz"))
+        XCTAssertNil(SpeechService.whisperCodeToAppleLocale(""))
+    }
+
+    func testWhisperCodeToAppleLocaleCantoneseMapping() {
+        XCTAssertEqual(SpeechService.whisperCodeToAppleLocale("yue"), "zh-HK")
+    }
+
+    // MARK: - Favorite Languages
+
+    func testFavoriteLanguagesDefaultsToEnglishAndTagalog() {
+        UserDefaults.standard.removeObject(forKey: "speechFavoriteLanguages")
+        let service = SpeechService()
+        XCTAssertEqual(service.favoriteLanguages, ["en", "tl"])
+    }
+
+    func testAddFavoriteAppendsLanguage() {
+        UserDefaults.standard.removeObject(forKey: "speechFavoriteLanguages")
+        let service = SpeechService()
+        service.addFavorite("ja")
+        XCTAssertEqual(service.favoriteLanguages, ["en", "tl", "ja"])
+    }
+
+    func testAddFavoriteDoesNotDuplicate() {
+        UserDefaults.standard.removeObject(forKey: "speechFavoriteLanguages")
+        let service = SpeechService()
+        service.addFavorite("en") // already in defaults
+        XCTAssertEqual(service.favoriteLanguages, ["en", "tl"])
+    }
+
+    func testAddFavoriteCapsAtFive() {
+        UserDefaults.standard.removeObject(forKey: "speechFavoriteLanguages")
+        let service = SpeechService()
+        // Default is ["en", "tl"] — add 3 more to reach 5
+        service.addFavorite("ja")
+        service.addFavorite("ko")
+        service.addFavorite("zh")
+        XCTAssertEqual(service.favoriteLanguages.count, 5)
+        // 6th should be rejected
+        service.addFavorite("fr")
+        XCTAssertEqual(service.favoriteLanguages.count, 5)
+        XCTAssertFalse(service.favoriteLanguages.contains("fr"))
+    }
+
+    func testRemoveFavoriteRemovesLanguage() {
+        UserDefaults.standard.removeObject(forKey: "speechFavoriteLanguages")
+        let service = SpeechService()
+        service.removeFavorite("tl")
+        XCTAssertEqual(service.favoriteLanguages, ["en"])
+    }
+
+    func testRemoveFavoriteNoOpForAbsentLanguage() {
+        UserDefaults.standard.removeObject(forKey: "speechFavoriteLanguages")
+        let service = SpeechService()
+        service.removeFavorite("xyz")
+        XCTAssertEqual(service.favoriteLanguages, ["en", "tl"])
+    }
+
+    func testFavoriteLanguagesPersistsToUserDefaults() {
+        let service = SpeechService()
+        service.addFavorite("de")
+        let stored = UserDefaults.standard.stringArray(forKey: "speechFavoriteLanguages")
+        XCTAssertNotNil(stored)
+        XCTAssertTrue(stored!.contains("de"))
+    }
+
+    // MARK: - Display Name Edge Cases
+
+    func testDisplayNameForUnknownCodeReturnsCode() {
+        XCTAssertEqual(SpeechService.displayName(for: "xyz"), "xyz")
+    }
+
+    func testDisplayNameForEmptyStringReturnsEmpty() {
+        XCTAssertEqual(SpeechService.displayName(for: ""), "")
+    }
+
+    // MARK: - Language List Data Integrity
+
+    func testWhisperSupportedLanguagesHaveUniqueCodesAndNames() {
+        let languages = SpeechService.whisperSupportedLanguages
+        let codes = Set(languages.map { $0.code })
+        let names = Set(languages.map { $0.name })
+        XCTAssertEqual(codes.count, languages.count, "Language codes must be unique")
+        XCTAssertEqual(names.count, languages.count, "Language names must be unique")
+    }
+
+    func testWhisperSupportedLanguagesContainsKeyLanguages() {
+        let codes = Set(SpeechService.whisperSupportedLanguages.map { $0.code })
+        let required = ["en", "tl", "ja", "ko", "zh", "es", "fr", "de", "ar", "hi", "pt", "ru"]
+        for code in required {
+            XCTAssertTrue(codes.contains(code), "Missing required language: \(code)")
+        }
+    }
+
+    func testWhisperSupportedLanguagesCodesAreNonEmpty() {
+        for lang in SpeechService.whisperSupportedLanguages {
+            XCTAssertFalse(lang.code.isEmpty, "Language code should not be empty")
+            XCTAssertFalse(lang.name.isEmpty, "Language name should not be empty for code: \(lang.code)")
+        }
+    }
+
+    // MARK: - Current Locale Display Name for Auto
+
+    func testCurrentLocaleDisplayNameForAutoShowsAutoDetect() {
+        UserDefaults.standard.removeObject(forKey: "speechLanguage")
+        let service = SpeechService()
+        XCTAssertEqual(service.currentLocaleDisplayName, "Auto-detect")
+    }
 }
