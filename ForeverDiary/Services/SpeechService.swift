@@ -51,7 +51,7 @@ final class SpeechService {
     }
 
     var languageIdentifier: String {
-        get { UserDefaults.standard.string(forKey: "speechLanguage") ?? Locale.current.identifier }
+        get { UserDefaults.standard.string(forKey: "speechLanguage") ?? "auto" }
         set { UserDefaults.standard.set(newValue, forKey: "speechLanguage") }
     }
 
@@ -147,16 +147,19 @@ final class SpeechService {
             }
         }
 
-        // Fallback if primary returned empty
+        // Fallback if primary returned empty (skip WhisperKit fallback if model not downloaded to avoid surprise ~809MB download)
         if result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let url = fileURL {
             let fallback: SpeechEngineType = engineChoice == .apple ? .whisperKit : .apple
-            isProcessing = true
-            if fallback == .whisperKit {
-                result = await transcribeWithWhisperKit(url: url)
-            } else {
-                result = await transcribeFileWithAppleSpeech(url: url)
+            let shouldAttemptFallback = fallback != .whisperKit || whisperModelState == .downloaded
+            if shouldAttemptFallback {
+                isProcessing = true
+                if fallback == .whisperKit {
+                    result = await transcribeWithWhisperKit(url: url)
+                } else {
+                    result = await transcribeFileWithAppleSpeech(url: url)
+                }
+                isProcessing = false
             }
-            isProcessing = false
         }
 
         transcribedText = result
@@ -213,35 +216,38 @@ final class SpeechService {
             audioFile = try AVAudioFile(forWriting: url, settings: recordingFormat.settings)
         }
 
-        // Set up Apple Speech if it's the primary engine (for live streaming)
-        if engineChoice == .apple {
-            let locale = Locale(identifier: languageIdentifier)
+        // Set up Apple Speech if it's the primary engine and language is supported
+        let appleLocale: String? = languageIdentifier == "auto"
+            ? Locale.current.identifier
+            : Self.whisperCodeToAppleLocale(languageIdentifier)
+
+        if engineChoice == .apple, let localeId = appleLocale {
+            let locale = Locale(identifier: localeId)
             speechRecognizer = SFSpeechRecognizer(locale: locale) ?? SFSpeechRecognizer()
 
-            guard let speechRecognizer, speechRecognizer.isAvailable else {
-                throw NSError(domain: "SpeechService", code: 1,
-                              userInfo: [NSLocalizedDescriptionKey: "Speech recognition not available for \(locale.identifier)."])
-            }
+            if let speechRecognizer, speechRecognizer.isAvailable {
+                recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
+                recognitionRequest?.shouldReportPartialResults = true
+                if speechRecognizer.supportsOnDeviceRecognition {
+                    recognitionRequest?.requiresOnDeviceRecognition = true
+                }
 
-            recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
-            recognitionRequest?.shouldReportPartialResults = true
-            if speechRecognizer.supportsOnDeviceRecognition {
-                recognitionRequest?.requiresOnDeviceRecognition = true
-            }
-
-            recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest!) { [weak self] result, taskError in
-                guard let self else { return }
-                if let result {
-                    Task { @MainActor in
-                        self.transcribedText = result.bestTranscription.formattedString
+                guard let request = recognitionRequest else { return }
+                recognitionTask = speechRecognizer.recognitionTask(with: request) { [weak self] result, taskError in
+                    guard let self else { return }
+                    if let result {
+                        Task { @MainActor in
+                            self.transcribedText = result.bestTranscription.formattedString
+                        }
+                    }
+                    if let taskError, (taskError as NSError).code != 216 {
+                        Task { @MainActor in
+                            self.error = taskError.localizedDescription
+                        }
                     }
                 }
-                if let taskError, (taskError as NSError).code != 216 {
-                    Task { @MainActor in
-                        self.error = taskError.localizedDescription
-                    }
-                }
             }
+            // If not available, fall through to record-only mode (WhisperKit fallback at stop)
         }
 
         // Install tap: write to file + feed Apple Speech + compute audio levels
@@ -250,7 +256,11 @@ final class SpeechService {
 
             // Write to file (always, for fallback support)
             self.fileWriteQueue.sync {
-                try? self.audioFile?.write(from: buffer)
+                do {
+                    try self.audioFile?.write(from: buffer)
+                } catch {
+                    print("[SpeechService] Audio file write failed: \(error.localizedDescription)")
+                }
             }
 
             // Feed Apple Speech recognition
@@ -293,8 +303,10 @@ final class SpeechService {
     }
 
     private func transcribeFileWithAppleSpeech(url: URL) async -> String {
-        let locale = Locale(identifier: languageIdentifier)
-        let recognizer = SFSpeechRecognizer(locale: locale) ?? SFSpeechRecognizer()
+        let localeId = languageIdentifier == "auto"
+            ? Locale.current.identifier
+            : (Self.whisperCodeToAppleLocale(languageIdentifier) ?? Locale.current.identifier)
+        let recognizer = SFSpeechRecognizer(locale: Locale(identifier: localeId)) ?? SFSpeechRecognizer()
         guard let recognizer, recognizer.isAvailable else { return "" }
 
         let request = SFSpeechURLRecognitionRequest(url: url)
@@ -331,13 +343,19 @@ final class SpeechService {
         #if canImport(WhisperKit)
         do {
             if whisperKit == nil {
-                whisperKit = try await WhisperKit(model: "openai_whisper-base", verbose: false)
+                whisperKit = try await WhisperKit(model: "openai_whisper-large-v3_turbo", verbose: false)
             }
             guard let whisperKit else { return "" }
 
-            let results = try await whisperKit.transcribe(audioPath: url.path())
-            return results.map { $0.text }.joined(separator: " ")
+            var options = DecodingOptions()
+            if languageIdentifier != "auto" {
+                options.language = languageIdentifier
+            }
+
+            let results = try await whisperKit.transcribe(audioPath: url.path(), decodeOptions: options)
+            let raw = results.map { $0.text }.joined(separator: " ")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
+            return Self.cleanTranscription(raw)
         } catch {
             await MainActor.run {
                 self.error = "WhisperKit transcription failed: \(error.localizedDescription)"
@@ -356,7 +374,7 @@ final class SpeechService {
         #if canImport(WhisperKit)
         whisperModelState = .downloading
         do {
-            whisperKit = try await WhisperKit(model: "openai_whisper-base", verbose: false)
+            whisperKit = try await WhisperKit(model: "openai_whisper-large-v3_turbo", verbose: false)
             whisperModelState = .downloaded
         } catch {
             whisperModelState = .error(error.localizedDescription)
@@ -394,6 +412,41 @@ final class SpeechService {
             }
         }
         whisperModelState = .notDownloaded
+    }
+
+    // MARK: - Transcription Cleanup
+
+    static func cleanTranscription(_ text: String) -> String {
+        // Strip noise tokens like [cough], [music], (laughter), [BLANK_AUDIO], etc.
+        let pattern = #"\[[\w\s]+\]|\([\w\s]+\)"#
+        let cleaned = text.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
+        // Collapse multiple spaces into one and trim
+        return cleaned.replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    // MARK: - Apple Speech Locale Mapping
+
+    static func whisperCodeToAppleLocale(_ code: String) -> String? {
+        let mapping: [String: String] = [
+            "af": "af-ZA", "ar": "ar-SA", "bg": "bg-BG", "bn": "bn-IN",
+            "ca": "ca-ES", "cs": "cs-CZ", "cy": "cy-GB", "da": "da-DK",
+            "de": "de-DE", "el": "el-GR", "en": "en-US", "es": "es-ES",
+            "et": "et-EE", "fa": "fa-IR", "fi": "fi-FI", "fr": "fr-FR",
+            "gl": "gl-ES", "gu": "gu-IN", "he": "he-IL", "hi": "hi-IN",
+            "hr": "hr-HR", "hu": "hu-HU", "hy": "hy-AM", "id": "id-ID",
+            "is": "is-IS", "it": "it-IT", "ja": "ja-JP", "ka": "ka-GE",
+            "kn": "kn-IN", "ko": "ko-KR", "lt": "lt-LT", "lv": "lv-LV",
+            "mk": "mk-MK", "ml": "ml-IN", "mr": "mr-IN", "ms": "ms-MY",
+            "my": "my-MM", "ne": "ne-NP", "nl": "nl-NL", "no": "nb-NO",
+            "pa": "pa-IN", "pl": "pl-PL", "pt": "pt-BR", "ro": "ro-RO",
+            "ru": "ru-RU", "sk": "sk-SK", "sl": "sl-SI", "sq": "sq-AL",
+            "sr": "sr-RS", "sv": "sv-SE", "sw": "sw-KE", "ta": "ta-IN",
+            "te": "te-IN", "th": "th-TH", "tr": "tr-TR", "uk": "uk-UA",
+            "ur": "ur-PK", "uz": "uz-UZ", "vi": "vi-VN", "zh": "zh-CN",
+            "yue": "zh-HK",
+        ]
+        return mapping[code]
     }
 
     // MARK: - Timer
@@ -434,14 +487,60 @@ final class SpeechService {
 
     // MARK: - Supported Languages
 
-    static var supportedLocales: [Locale] {
-        SFSpeechRecognizer.supportedLocales()
-            .sorted { ($0.localizedString(forIdentifier: $0.identifier) ?? "") < ($1.localizedString(forIdentifier: $1.identifier) ?? "") }
-            .map { Locale(identifier: $0.identifier) }
+    static let whisperSupportedLanguages: [(code: String, name: String)] = [
+        ("af", "Afrikaans"), ("sq", "Albanian"), ("am", "Amharic"), ("ar", "Arabic"),
+        ("hy", "Armenian"), ("as", "Assamese"), ("az", "Azerbaijani"), ("ba", "Bashkir"),
+        ("eu", "Basque"), ("be", "Belarusian"), ("bn", "Bengali"), ("bs", "Bosnian"),
+        ("br", "Breton"), ("bg", "Bulgarian"), ("yue", "Cantonese"), ("ca", "Catalan"),
+        ("zh", "Chinese"), ("hr", "Croatian"), ("cs", "Czech"), ("da", "Danish"),
+        ("nl", "Dutch"), ("en", "English"), ("et", "Estonian"), ("fo", "Faroese"),
+        ("tl", "Filipino (Tagalog)"), ("fi", "Finnish"), ("fr", "French"), ("gl", "Galician"),
+        ("ka", "Georgian"), ("de", "German"), ("el", "Greek"), ("gu", "Gujarati"),
+        ("ht", "Haitian Creole"), ("ha", "Hausa"), ("haw", "Hawaiian"), ("he", "Hebrew"),
+        ("hi", "Hindi"), ("hu", "Hungarian"), ("is", "Icelandic"), ("id", "Indonesian"),
+        ("it", "Italian"), ("ja", "Japanese"), ("jw", "Javanese"), ("kn", "Kannada"),
+        ("kk", "Kazakh"), ("km", "Khmer"), ("ko", "Korean"), ("lo", "Lao"),
+        ("la", "Latin"), ("lv", "Latvian"), ("ln", "Lingala"), ("lt", "Lithuanian"),
+        ("lb", "Luxembourgish"), ("mk", "Macedonian"), ("mg", "Malagasy"), ("ms", "Malay"),
+        ("ml", "Malayalam"), ("mt", "Maltese"), ("mi", "Maori"), ("mr", "Marathi"),
+        ("mn", "Mongolian"), ("my", "Myanmar"), ("ne", "Nepali"), ("no", "Norwegian"),
+        ("nn", "Nynorsk"), ("oc", "Occitan"), ("ps", "Pashto"), ("fa", "Persian"),
+        ("pl", "Polish"), ("pt", "Portuguese"), ("pa", "Punjabi"), ("ro", "Romanian"),
+        ("ru", "Russian"), ("sa", "Sanskrit"), ("sr", "Serbian"), ("sn", "Shona"),
+        ("sd", "Sindhi"), ("si", "Sinhala"), ("sk", "Slovak"), ("sl", "Slovenian"),
+        ("so", "Somali"), ("es", "Spanish"), ("su", "Sundanese"), ("sw", "Swahili"),
+        ("sv", "Swedish"), ("tg", "Tajik"), ("ta", "Tamil"), ("tt", "Tatar"),
+        ("te", "Telugu"), ("th", "Thai"), ("bo", "Tibetan"), ("tr", "Turkish"),
+        ("tk", "Turkmen"), ("uk", "Ukrainian"), ("ur", "Urdu"), ("uz", "Uzbek"),
+        ("vi", "Vietnamese"), ("cy", "Welsh"), ("yi", "Yiddish"), ("yo", "Yoruba"),
+    ]
+
+    static func displayName(for code: String) -> String {
+        if code == "auto" { return "Auto-detect" }
+        return whisperSupportedLanguages.first { $0.code == code }?.name ?? code
     }
 
     var currentLocaleDisplayName: String {
-        let locale = Locale(identifier: languageIdentifier)
-        return locale.localizedString(forIdentifier: languageIdentifier) ?? languageIdentifier
+        Self.displayName(for: languageIdentifier)
+    }
+
+    // MARK: - Favorite Languages
+
+    var favoriteLanguages: [String] {
+        get { UserDefaults.standard.stringArray(forKey: "speechFavoriteLanguages") ?? ["en", "tl"] }
+        set { UserDefaults.standard.set(newValue, forKey: "speechFavoriteLanguages") }
+    }
+
+    func addFavorite(_ code: String) {
+        var favorites = favoriteLanguages
+        guard !favorites.contains(code), favorites.count < 5 else { return }
+        favorites.append(code)
+        favoriteLanguages = favorites
+    }
+
+    func removeFavorite(_ code: String) {
+        var favorites = favoriteLanguages
+        favorites.removeAll { $0 == code }
+        favoriteLanguages = favorites
     }
 }

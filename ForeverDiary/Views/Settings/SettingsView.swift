@@ -154,8 +154,13 @@ struct SettingsView: View {
 
     private var whisperModelRow: some View {
         HStack {
-            Text("WhisperKit Model")
-                .font(.system(.body, design: .rounded))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("WhisperKit Model")
+                    .font(.system(.body, design: .rounded))
+                Text("large-v3-turbo (~809 MB)")
+                    .font(.system(.caption2, design: .rounded))
+                    .foregroundStyle(Color("textSecondary"))
+            }
             Spacer()
             switch speechService.whisperModelState {
             case .notDownloaded:

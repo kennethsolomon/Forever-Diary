@@ -5,6 +5,64 @@
 
 ---
 
+# Security Audit — 2026-03-13 (Dictation Improvement — Tagalog & Language Controls)
+
+**Scope:** Changed files on branch `feat/speech-to-text` (dictation improvement commits)
+**Stack:** Swift / SwiftUI (iOS 17+ / macOS 14+) + AVFoundation + Speech framework + WhisperKit
+**Files audited:** 5 (SpeechService.swift, RecordingView.swift, SettingsView.swift, SettingsMacView.swift, SpeechServiceTests.swift)
+
+## Prior Findings — Resolution Status
+
+| # | Prior Finding | Status |
+|---|--------------|--------|
+| 1 | Medium — Temp audio files (PII) never deleted | **Still fixed** — `cleanupTempFile()` still called in `stopRecording()` (line 164) and `cancelRecording()` (line 181). |
+| 2 | Low — `transcribeFileWithAppleSpeech()` may hang | **Still fixed** — 30-second timeout via `withTaskGroup` still present (lines 306-329). |
+
+## Critical (must fix before deploy)
+
+_None found._
+
+## High (fix before production)
+
+_None found._
+
+## Medium (should fix)
+
+_None found._
+
+## Low / Informational
+
+_None found._
+
+## Passed Checks
+
+- **PII Cleanup** — Temp audio files still properly deleted after `stopRecording()` and `cancelRecording()`. `cleanupTempFile()` removes `.wav` file and nils `recordingURL`. No change to this behavior.
+- **Timeout Safety** — `transcribeFileWithAppleSpeech()` still has 30-second timeout via `withTaskGroup`. `transcribeWithWhisperKit()` does not have an explicit timeout but WhisperKit's `transcribe()` is bounded by audio file length (max 5 min recording cap enforced by timer).
+- **Input Validation** — `languageIdentifier` accepts arbitrary strings from UserDefaults but is only used as:
+  - A key lookup in `whisperCodeToAppleLocale()` (returns nil for unknown codes — safe)
+  - Passed to `DecodingOptions(language:)` for WhisperKit (WhisperKit validates internally — safe)
+  - Passed to `Locale(identifier:)` for Apple Speech (Foundation handles gracefully — safe)
+  No injection vectors.
+- **Favorite Languages** — `addFavorite()` validates: rejects duplicates and caps at 5. `removeFavorite()` uses `removeAll(where:)` which is safe for absent items. No unbounded growth.
+- **cleanTranscription() Regex** — Uses `NSRegularExpression` via `.regularExpression` option on `String.replacingOccurrences`. The patterns `\[[\w\s]+\]` and `\([\w\s]+\)` are static compile-time strings (no user input in pattern). No ReDoS risk — patterns are simple with no nested quantifiers.
+- **No Hardcoded Secrets** — No API keys, tokens, or credentials in changed files. Model identifier `"openai_whisper-large-v3_turbo"` is a public model name, not a secret.
+- **No Network Calls in New Code** — WhisperKit model download uses WhisperKit's built-in download mechanism (HuggingFace). No new direct network calls introduced. Model download was already present; only the model name changed.
+- **UserDefaults Storage** — Language preferences and favorites stored in UserDefaults (not Keychain). This is appropriate — these are non-sensitive UI preferences, not credentials or PII. No change in storage approach.
+- **No XSS / Injection** — All user-facing text in SwiftUI views uses `Text()` which auto-escapes. No `UIWebView`, `WKWebView`, or HTML rendering. Language names come from a static hardcoded array, not external input.
+- **Error Message Safety** — `error.localizedDescription` is displayed to users in `statusLabel` (RecordingView line 165-167) and set in `transcribeWithWhisperKit` (line 353). These are system-generated error descriptions, not internal stack traces. Acceptable for a local-only app.
+
+## Summary
+
+| Severity | Count |
+|----------|-------|
+| Critical | 0 |
+| High     | 0 |
+| Medium   | 0 |
+| Low      | 0 |
+| **Total** | **0** |
+
+---
+
 # Security Audit — 2026-03-13 (Speech-to-Text Dictation — attempt 2)
 
 **Scope:** Re-audit of `SpeechService.swift` after fixing prior findings

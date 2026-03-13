@@ -1,5 +1,40 @@
 # Progress Log
 
+## Session: 2026-03-13 — Improve Dictation (Tagalog Support & Accuracy)
+
+### Work Log
+- Phase 1: Added `whisperSupportedLanguages` static array (97 languages sorted alphabetically by name, including Filipino/Tagalog)
+- Phase 1: Added `displayName(for:)` helper, changed `languageIdentifier` default from `Locale.current.identifier` to `"auto"`
+- Phase 1: Added `favoriteLanguages` (UserDefaults-backed, default `["en", "tl"]`), `addFavorite`/`removeFavorite` with cap of 5
+- Phase 2: Upgraded WhisperKit model from `openai_whisper-base` to `openai_whisper-large-v3_turbo`
+- Phase 2: Pass language via `DecodingOptions(language:)` to `whisperKit.transcribe()`
+- Phase 2: Added `cleanTranscription()` — strips `[cough]`, `[music]`, `(laughter)` etc. via regex
+- Phase 3: Added `whisperCodeToAppleLocale()` mapping for Apple Speech fallback
+- Phase 3: Updated `startAudioEngine()` — skips Apple Speech live streaming for unsupported languages (like Tagalog)
+- Phase 3: Updated `transcribeFileWithAppleSpeech()` to use mapped locale
+- Phase 4: Added quick-switch favorite pills to RecordingView top bar (capsule buttons with 2-letter codes)
+- Phase 5: Rewrote LanguagePickerView — WhisperKit language list, search, favorites section, swipe actions
+- Phase 6: Updated macOS SpeechTab language picker to use `whisperSupportedLanguages`
+- Phase 6: Added model name + size display (`large-v3-turbo (~809 MB)`) to both iOS and macOS settings
+- Phase 7: Removed `supportedLocales`, updated tests, fixed `.navigationBarDrawer` macOS compatibility
+- Phase 7: xcodegen generate, iOS BUILD SUCCEEDED, macOS BUILD SUCCEEDED, 152/152 tests pass
+
+### Files Modified
+- ForeverDiary/Services/SpeechService.swift
+- ForeverDiary/Views/Speech/RecordingView.swift
+- ForeverDiary/Views/Settings/SettingsView.swift
+- ForeverDiaryMac/Views/Settings/SettingsMacView.swift
+- ForeverDiaryTests/SpeechServiceTests.swift
+
+### Test Results
+| Command | Expected | Actual | Status |
+|---------|----------|--------|--------|
+| xcodebuild build iOS (iPhone 16e) | BUILD SUCCEEDED | BUILD SUCCEEDED | PASS |
+| xcodebuild build macOS | BUILD SUCCEEDED | BUILD SUCCEEDED | PASS |
+| xcodebuild test iOS (iPhone 16e) | 152/152 pass | 152/152 pass | PASS |
+
+---
+
 ## Session: 2026-03-12 — Speech-to-Text Dictation Feature
 
 ### Work Log
