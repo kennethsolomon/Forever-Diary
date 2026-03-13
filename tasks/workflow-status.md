@@ -5,15 +5,15 @@
 
 | # | Step | Status | Notes |
 |---|------|--------|-------|
-| 1 | /brainstorm | done | polling optimization (Approach A): 5s lightweight check, "Updated" toast, both platforms |
-| 2 | /frontend-design | done | SyncToast component: slide-down banner, accentBright icon, 3s auto-dismiss, both platforms |
-| 3 | /write-plan | done | 10 steps, 4 phases — lightweight check endpoint, toast state, iOS+macOS toast UI, verify |
-| 4 | /execute-plan | done | all 10 steps complete; iOS + macOS BUILD SUCCEEDED; 111/111 tests pass |
-| 5 | /commit | done | feat(sync) + chore(tasks) commits on feat/lightweight-sync-check |
-| 6 | /write-tests | done | 11 new tests in LightweightSyncCheckTests.swift; 122/122 pass |
-| 7 | /commit | done | test(sync) commit b4b4cfd |
-| 8 | /debug | skipped | no issues to debug |
-| 9 | /security-check | done | clean — 0 findings across all severities |
+| 1 | /brainstorm | done | speech-to-text: dual-engine (Apple Speech + WhisperKit), settings toggle, 5-min cap, both platforms |
+| 2 | /frontend-design | done | mic button in action bar, recording sheet/popover, waveform bars, settings engine picker |
+| 3 | /write-plan | done | 17 steps, 8 phases — permissions, SpeechService, shared UI, iOS+macOS integration, settings, verify |
+| 4 | /execute-plan | done | all 17 steps complete, iOS+macOS build, 122/122 tests pass |
+| 5 | /commit | done | feat/speech-to-text branch, 6a57611 |
+| 6 | /write-tests | done | 28 new tests in SpeechServiceTests.swift, 150/150 total pass |
+| 7 | /commit | done | f81a2c8, test file + workflow tracker |
+| 8 | /debug | skipped | user skipped to /security-check |
+| 9 | /security-check | done | clean on attempt 2 — temp file cleanup + timeout fix |
 | 10 | /commit | >> next << | conditional |
 | 11 | /review | not yet | loop |
 | 12 | /commit | not yet | conditional |

@@ -9,6 +9,7 @@ struct EntryEditorView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(SyncService.self) private var syncService
+    @Environment(SpeechService.self) private var speechService
     @Environment(NetworkMonitor.self) private var networkMonitor
 
     @State private var diaryText = ""
@@ -16,6 +17,9 @@ struct EntryEditorView: View {
     @State private var saveTask: Task<Void, Never>?
     @State private var showSaved = false
     @State private var isCheckInsExpanded = true
+
+    // Speech
+    @State private var showRecording = false
 
     // Photos
     @State private var showPhotoLimitAlert = false
@@ -330,6 +334,25 @@ struct EntryEditorView: View {
 
     private var actionBar: some View {
         HStack(spacing: 16) {
+            // Dictate
+            Button {
+                showRecording = true
+            } label: {
+                Label("Dictate", systemImage: speechService.isRecording ? "mic.fill" : "mic")
+                    .font(.system(.caption, design: .rounded))
+                    .foregroundStyle(speechService.isRecording ? Color("accentBright") : Color("textSecondary"))
+                    .symbolEffect(.variableColor.iterative, isActive: speechService.isRecording)
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: $showRecording) {
+                RecordingView { text in
+                    diaryText += (diaryText.isEmpty ? "" : " ") + text
+                    debounceSave(text: diaryText)
+                }
+                .environment(speechService)
+                .frame(minWidth: 320, minHeight: 280)
+            }
+
             // Photo count
             Label(String(sortedPhotos.count), systemImage: "photo")
                 .font(.system(.caption, design: .rounded))

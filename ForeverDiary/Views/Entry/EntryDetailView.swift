@@ -6,6 +6,7 @@ struct EntryDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Environment(SyncService.self) private var syncService
+    @Environment(SpeechService.self) private var speechService
 
     let monthDayKey: String
     let year: Int
@@ -22,6 +23,7 @@ struct EntryDetailView: View {
     @State private var saveTask: Task<Void, Never>?
     @State private var locationSaveTask: Task<Void, Never>?
     @State private var showSaved = false
+    @State private var showRecording = false
 
     @Query private var entries: [DiaryEntry]
     @Query private var templates: [CheckInTemplate]
@@ -152,24 +154,46 @@ struct EntryDetailView: View {
     // MARK: - Diary Text
 
     private var diarySection: some View {
-        ZStack(alignment: .topLeading) {
-            if diaryText.isEmpty {
-                Text("Write about your day...")
-                    .font(.system(.body, design: .serif))
-                    .foregroundStyle(Color("textSecondary").opacity(0.6))
-                    .padding(.top, 8)
-                    .padding(.leading, 5)
-                    .allowsHitTesting(false)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Spacer()
+                Button {
+                    showRecording = true
+                } label: {
+                    Label("Dictate", systemImage: speechService.isRecording ? "mic.fill" : "mic")
+                        .font(.system(.caption, design: .rounded))
+                        .foregroundStyle(speechService.isRecording ? Color("accentBright") : Color("textSecondary"))
+                        .symbolEffect(.variableColor.iterative, isActive: speechService.isRecording)
+                }
+                .sheet(isPresented: $showRecording) {
+                    RecordingView { text in
+                        diaryText += (diaryText.isEmpty ? "" : " ") + text
+                        debounceSave(text: diaryText)
+                    }
+                    .environment(speechService)
+                    .presentationDetents([.medium])
+                }
             }
 
-            TextEditor(text: $diaryText)
-                .font(.system(.body, design: .serif))
-                .foregroundStyle(Color("textPrimary"))
-                .scrollContentBackground(.hidden)
-                .frame(minHeight: 200)
-                .onChange(of: diaryText) { _, newValue in
-                    debounceSave(text: newValue)
+            ZStack(alignment: .topLeading) {
+                if diaryText.isEmpty {
+                    Text("Write about your day...")
+                        .font(.system(.body, design: .serif))
+                        .foregroundStyle(Color("textSecondary").opacity(0.6))
+                        .padding(.top, 8)
+                        .padding(.leading, 5)
+                        .allowsHitTesting(false)
                 }
+
+                TextEditor(text: $diaryText)
+                    .font(.system(.body, design: .serif))
+                    .foregroundStyle(Color("textPrimary"))
+                    .scrollContentBackground(.hidden)
+                    .frame(minHeight: 200)
+                    .onChange(of: diaryText) { _, newValue in
+                        debounceSave(text: newValue)
+                    }
+            }
         }
     }
 

@@ -5,6 +5,7 @@ struct SettingsMacView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(SyncService.self) private var syncService
     @Environment(CognitoAuthService.self) private var cognitoAuth
+    @Environment(SpeechService.self) private var speechService
 
     @AppStorage("appTheme") private var storedTheme: String = AppTheme.system.rawValue
     @State private var showSignOutAlert = false
@@ -20,6 +21,9 @@ struct SettingsMacView: View {
             HabitsTab()
                 .tabItem { Label("Habits", systemImage: "checkmark.circle") }
 
+            SpeechTab()
+                .tabItem { Label("Speech", systemImage: "mic.circle") }
+
             SyncTab()
                 .tabItem { Label("Sync", systemImage: "icloud") }
         }
@@ -27,6 +31,7 @@ struct SettingsMacView: View {
         .background(Color("backgroundPrimary"))
         .environment(syncService)
         .environment(cognitoAuth)
+        .environment(speechService)
         .alert("Sign Out?", isPresented: $showSignOutAlert) {
             Button("Sign Out", role: .destructive) {
                 cognitoAuth.signOut()
@@ -250,6 +255,138 @@ private struct HabitsTab: View {
             let template = sorted[index]
             Task {
                 await syncService.deleteTemplate(template, context: modelContext)
+            }
+        }
+    }
+}
+
+// MARK: - Speech Tab
+
+private struct SpeechTab: View {
+    @Environment(SpeechService.self) private var speechService
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Spacer()
+
+            VStack(spacing: 16) {
+                Image(systemName: "mic.circle.fill")
+                    .font(.system(size: 40))
+                    .foregroundStyle(Color("accentBright"))
+
+                Text("Speech Engine")
+                    .font(.system(.headline, design: .rounded))
+                    .foregroundStyle(Color("textPrimary"))
+
+                Picker("Engine", selection: Binding(
+                    get: { speechService.engineChoice },
+                    set: { newValue in
+                        speechService.engineChoice = newValue
+                        if newValue == .whisperKit && speechService.whisperModelState == .notDownloaded {
+                            Task { await speechService.downloadWhisperModel() }
+                        }
+                    }
+                )) {
+                    ForEach(SpeechEngineType.allCases, id: \.rawValue) { engine in
+                        Text(engine.displayName).tag(engine)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 300)
+
+                Text("The other engine is used as fallback if the primary fails.")
+                    .font(.system(.caption, design: .rounded))
+                    .foregroundStyle(Color("textSecondary"))
+                    .multilineTextAlignment(.center)
+
+                Divider()
+                    .frame(maxWidth: 300)
+
+                // Language
+                HStack {
+                    Text("Language")
+                        .font(.system(.subheadline, design: .rounded))
+                        .foregroundStyle(Color("textPrimary"))
+                    Spacer()
+                    Picker("", selection: Binding(
+                        get: { speechService.languageIdentifier },
+                        set: { speechService.languageIdentifier = $0 }
+                    )) {
+                        if speechService.engineChoice == .whisperKit {
+                            Text("Auto-detect").tag("auto")
+                        }
+                        ForEach(SpeechService.supportedLocales, id: \.identifier) { locale in
+                            Text(locale.localizedString(forIdentifier: locale.identifier) ?? locale.identifier)
+                                .tag(locale.identifier)
+                        }
+                    }
+                    .frame(maxWidth: 200)
+                }
+                .frame(maxWidth: 300)
+
+                // WhisperKit model status
+                if speechService.engineChoice == .whisperKit || speechService.whisperModelState == .downloaded {
+                    Divider()
+                        .frame(maxWidth: 300)
+
+                    HStack {
+                        Text("WhisperKit Model")
+                            .font(.system(.subheadline, design: .rounded))
+                            .foregroundStyle(Color("textPrimary"))
+                        Spacer()
+                        whisperModelStatus
+                    }
+                    .frame(maxWidth: 300)
+                }
+            }
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color("backgroundPrimary"))
+    }
+
+    @ViewBuilder
+    private var whisperModelStatus: some View {
+        switch speechService.whisperModelState {
+        case .notDownloaded:
+            Button("Download") {
+                Task { await speechService.downloadWhisperModel() }
+            }
+            .font(.system(.caption, design: .rounded))
+            .foregroundStyle(Color("accentBright"))
+            .buttonStyle(.plain)
+        case .downloading:
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Downloading...")
+                    .font(.system(.caption, design: .rounded))
+                    .foregroundStyle(Color("textSecondary"))
+            }
+        case .downloaded:
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(Color("habitComplete"))
+                    .font(.caption)
+                Button("Delete", role: .destructive) {
+                    speechService.deleteWhisperModel()
+                }
+                .font(.system(.caption, design: .rounded))
+                .buttonStyle(.plain)
+                .foregroundStyle(Color("destructive"))
+            }
+        case .error(let msg):
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(msg)
+                    .font(.system(.caption2, design: .rounded))
+                    .foregroundStyle(Color("destructive"))
+                Button("Retry") {
+                    Task { await speechService.downloadWhisperModel() }
+                }
+                .font(.system(.caption, design: .rounded))
+                .foregroundStyle(Color("accentBright"))
+                .buttonStyle(.plain)
             }
         }
     }

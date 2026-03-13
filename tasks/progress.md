@@ -1,5 +1,53 @@
 # Progress Log
 
+## Session: 2026-03-12 — Speech-to-Text Dictation Feature
+
+### Work Log
+- Phase 1: Added NSSpeechRecognitionUsageDescription + NSMicrophoneUsageDescription to Info.plist
+- Phase 1: Added INFOPLIST_KEY_ entries to project.yml for iOS target
+- Phase 1: Added com.apple.security.device.audio-input to macOS entitlements + project.yml
+- Phase 1: Added WhisperKit SPM package to project.yml (both targets)
+- Phase 2: Created SpeechService.swift — dual-engine orchestrator (Apple Speech + WhisperKit), always records to temp file via AVAudioEngine for bidirectional fallback
+- Phase 3: Created WaveformView.swift — 5-bar animated waveform, spring animation, idle pulse
+- Phase 3: Created RecordingView.swift — language pill, countdown timer, waveform, live transcript, stop button, LanguagePickerView
+- Phase 3: Added ForeverDiary/Views/Speech as shared source in project.yml macOS target
+- Phase 4: Added mic button to HomeView action bar (sheet with .medium detent)
+- Phase 4: Added mic button to EntryDetailView (sheet with .medium detent)
+- Phase 5: Added mic button to macOS EntryEditorView action bar (popover, 320pt min width)
+- Phase 6: Added Speech section to iOS SettingsView (engine picker, language nav, WhisperKit model status)
+- Phase 6: Added Speech tab to macOS SettingsMacView (centered layout, same controls)
+- Phase 7: Injected SpeechService via .environment() in ForeverDiaryApp and ForeverDiaryMacApp
+- Phase 8: xcodegen generate — succeeded
+- Phase 8: iOS build (iPhone 16e) — BUILD SUCCEEDED
+- Phase 8: macOS build — BUILD SUCCEEDED
+- Phase 8: Tests — 122/122 pass, TEST SUCCEEDED
+
+### Files Created
+- ForeverDiary/Services/SpeechService.swift
+- ForeverDiary/Views/Speech/WaveformView.swift
+- ForeverDiary/Views/Speech/RecordingView.swift
+
+### Files Modified
+- ForeverDiary/Info.plist
+- project.yml
+- ForeverDiaryMac/ForeverDiaryMac.entitlements
+- ForeverDiary/Views/Home/HomeView.swift
+- ForeverDiary/Views/Entry/EntryDetailView.swift
+- ForeverDiaryMac/Views/Editor/EntryEditorView.swift
+- ForeverDiary/Views/Settings/SettingsView.swift
+- ForeverDiaryMac/Views/Settings/SettingsMacView.swift
+- ForeverDiary/App/ForeverDiaryApp.swift
+- ForeverDiaryMac/App/ForeverDiaryMacApp.swift
+
+### Test Results
+| Command | Expected | Actual | Status |
+|---------|----------|--------|--------|
+| xcodebuild build iOS (iPhone 16e) | BUILD SUCCEEDED | BUILD SUCCEEDED | PASS |
+| xcodebuild build macOS | BUILD SUCCEEDED | BUILD SUCCEEDED | PASS |
+| xcodebuild test iOS (iPhone 16e) | 122/122 pass | 122/122 pass | PASS |
+
+---
+
 ## Session: 2026-03-11 — Lightweight Sync Check + Remote Update Toast
 
 ### Work Log

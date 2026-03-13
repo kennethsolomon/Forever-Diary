@@ -8,6 +8,7 @@ struct ForeverDiaryMacApp: App {
     let googleAuth: GoogleAuthService
     let syncService: SyncService
     let networkMonitor: NetworkMonitor
+    let speechService: SpeechService
 
     init() {
         let schema = Schema([
@@ -41,6 +42,7 @@ struct ForeverDiaryMacApp: App {
         googleAuth = GoogleAuthService()
         networkMonitor = monitor
         syncService = SyncService(apiClient: api, authService: auth, container: resolvedContainer, networkMonitor: monitor)
+        speechService = SpeechService()
     }
 
     var body: some Scene {
@@ -50,6 +52,7 @@ struct ForeverDiaryMacApp: App {
                 .environment(cognitoAuth)
                 .environment(googleAuth)
                 .environment(networkMonitor)
+                .environment(speechService)
         }
         .modelContainer(container)
         .commands {
@@ -66,6 +69,7 @@ struct ForeverDiaryMacApp: App {
                 .environment(syncService)
                 .environment(cognitoAuth)
                 .environment(networkMonitor)
+                .environment(speechService)
                 .modelContainer(container)
         }
     }

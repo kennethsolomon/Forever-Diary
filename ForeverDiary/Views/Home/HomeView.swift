@@ -4,12 +4,14 @@ import SwiftData
 struct HomeView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(SyncService.self) private var syncService
+    @Environment(SpeechService.self) private var speechService
     @FocusState private var isTextEditorFocused: Bool
     @State private var diaryText = ""
     @State private var showSavedIndicator = false
     @State private var saveTask: Task<Void, Never>?
     @State private var showLocationEditor = false
     @State private var showPhotoPicker = false
+    @State private var showRecording = false
 
     private let today = Date.now
     private var todayKey: String { DiaryEntry.monthDayKey(from: today) }
@@ -145,6 +147,26 @@ struct HomeView: View {
             }
             .sheet(isPresented: $showLocationEditor) {
                 LocationEditSheet(entry: entry)
+            }
+
+            Button {
+                showRecording = true
+            } label: {
+                Label(
+                    "Dictate",
+                    systemImage: speechService.isRecording ? "mic.fill" : "mic"
+                )
+                .font(.system(.caption, design: .rounded))
+                .foregroundStyle(speechService.isRecording ? Color("accentBright") : Color("textSecondary"))
+                .symbolEffect(.variableColor.iterative, isActive: speechService.isRecording)
+            }
+            .sheet(isPresented: $showRecording) {
+                RecordingView { text in
+                    diaryText += (diaryText.isEmpty ? "" : " ") + text
+                    debounceSave(text: diaryText)
+                }
+                .environment(speechService)
+                .presentationDetents([.medium])
             }
 
             Spacer()

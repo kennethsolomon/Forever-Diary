@@ -8,6 +8,10 @@
 	<string>Forever Diary lets you attach photos to your diary entries.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Forever Diary lets you take photos to attach to your diary entries.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Forever Diary uses speech recognition to transcribe your voice into diary entries.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Forever Diary uses the microphone to record your voice for diary dictation.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
