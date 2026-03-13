@@ -5,6 +5,113 @@
 
 ---
 
+# Security Audit — 2026-03-13 (Speech-to-Text Dictation — attempt 2)
+
+**Scope:** Re-audit of `SpeechService.swift` after fixing prior findings
+**Stack:** Swift / SwiftUI (iOS 17+ / macOS 14+) + AVFoundation + Speech framework + WhisperKit
+**Files audited:** 1 (SpeechService.swift)
+
+## Prior Findings — Resolution Status
+
+| # | Prior Finding | Status |
+|---|--------------|--------|
+| 1 | Medium — Temp audio files (PII) never deleted after transcription | **Fixed** — `cleanupTempFile()` added to `stopRecording()` (line 166) and `cancelRecording()` (line 184). Deletes `.wav` file and nils `recordingURL` (lines 187-192). |
+| 2 | Low — `transcribeFileWithAppleSpeech()` may hang indefinitely | **Fixed** — Wrapped in `withTaskGroup` with 30-second timeout task (lines 305-327). Whichever finishes first wins; the other is cancelled via `group.cancelAll()`. |
+
+## Critical (must fix before deploy)
+
+_None found._
+
+## High (fix before production)
+
+_None found._
+
+## Medium (should fix)
+
+_None found._
+
+## Low / Informational
+
+_None found._
+
+## Passed Checks
+
+- **PII Cleanup** — `cleanupTempFile()` deletes voice recording from temp directory after both `stopRecording()` and `cancelRecording()`. `recordingURL` set to nil after deletion. No orphaned audio files.
+- **Timeout Safety** — `transcribeFileWithAppleSpeech()` uses `withTaskGroup` with a 30-second `Task.sleep` race. If the recognizer never calls back, the timeout returns empty string, allowing the fallback engine to proceed. `group.cancelAll()` ensures the losing task is cancelled.
+- All other checks from initial audit still pass (no regressions).
+
+## Summary
+
+| Severity | Count |
+|----------|-------|
+| Critical | 0 |
+| High     | 0 |
+| Medium   | 0 |
+| Low      | 0 |
+| **Total** | **0** |
+
+---
+
+# Security Audit — 2026-03-12 (Speech-to-Text Dictation)
+
+**Scope:** Changed files on branch `feat/speech-to-text`
+**Stack:** Swift / SwiftUI (iOS 17+ / macOS 14+) + AVFoundation + Speech framework + WhisperKit
+**Files audited:** 14
+
+## Critical (must fix before deploy)
+
+_None found._
+
+## High (fix before production)
+
+_None found._
+
+## Medium (should fix)
+
+- **[SpeechService.swift:166]** Temp audio files (`.wav`) containing voice recordings are never deleted after transcription completes
+  **Standard:** CWE-459 — Incomplete Cleanup / Data Protection (PII handling)
+  **Risk:** Each recording creates a `diary_speech_<UUID>.wav` file in the temp directory containing the user's voice. After `stopRecording()` returns the transcribed text, the audio file remains on disk. While iOS periodically purges temp files, macOS does not aggressively clean them. Over time, voice recordings accumulate — this is PII that could be accessed if the device is compromised or if a backup includes the temp directory.
+  **Recommendation:** Delete `recordingURL` at the end of `stopRecording()` and `cancelRecording()`:
+  ```swift
+  if let url = recordingURL { try? FileManager.default.removeItem(at: url) }
+  recordingURL = nil
+  ```
+
+## Low / Informational
+
+- **[SpeechService.swift:296-309]** `transcribeFileWithAppleSpeech()` may hang indefinitely if `SFSpeechRecognizer` never calls the result handler
+  **Standard:** CWE-835 — Loop with Unreachable Exit Condition (analogous — unbounded await)
+  **Risk:** If Apple Speech Recognition fails to call the result handler (e.g., corrupted audio file, recognizer becomes unavailable mid-transcription, zero-length audio), the `withCheckedContinuation` never resumes. The UI stays in "Processing..." state indefinitely. The user must dismiss and re-enter the recording view. Low probability — Apple's recognizer reliably calls back with either a result or error in normal conditions.
+  **Recommendation:** Add a timeout using `Task.sleep` race or `withThrowingTaskGroup` (e.g., 30 seconds). Return empty string on timeout to allow the fallback engine to attempt transcription.
+
+## Passed Checks
+
+- **A01 Broken Access Control** — No auth logic changed. Speech service is entirely local — no network calls except WhisperKit model download (handled by WhisperKit SDK to known HuggingFace endpoint). No user data leaves the device during transcription.
+- **A02 Cryptographic Failures** — No cryptographic operations introduced. UserDefaults stores non-sensitive preferences (engine choice, language). Voice audio stays on-device.
+- **A03 Injection** — Transcribed text is plain `String` appended to diary via SwiftUI `TextEditor` binding. No HTML rendering, no web views, no SQL. SwiftData `#Predicate` macros are type-safe.
+- **A04 Insecure Design** — 5-minute recording cap prevents unbounded resource consumption. `computeAudioLevel` processes fixed-size buffers (4096 frames). `stopRecording()` guard prevents double-stop. Audio engine tap removed before engine stop. `fileWriteQueue.sync` serializes file writes.
+- **A05 Security Misconfiguration** — Permission descriptions are specific and accurate. `com.apple.security.device.audio-input` entitlement is the minimum required for macOS sandbox. No debug flags or verbose errors.
+- **A06 Vulnerable Components** — WhisperKit is from argmaxinc (reputable, MIT-licensed). SPM `from: "0.9.0"` resolved to 0.16.0. No known CVEs. All other frameworks are Apple system frameworks.
+- **A07 Auth Failures** — N/A — speech is a local-only feature with no auth requirements beyond OS permissions.
+- **A08 Data Integrity** — `recognitionTask` callback uses `[weak self]` — no retain cycle. `hasResumed` flag prevents double-resume of checked continuation. Audio file written via `AVAudioFile` (safe API). `try? FileManager.default.removeItem(at:)` before file creation prevents stale data.
+- **A09 Logging** — No `print` statements in new code. Error messages set via `error.localizedDescription` — no PII. `SpeechService.error` displayed only in local UI.
+- **A10 SSRF** — No user-controlled URLs. WhisperKit model download URL is internal to WhisperKit SDK. No outbound network from speech recording or transcription.
+- **Permissions** — `NSSpeechRecognitionUsageDescription` and `NSMicrophoneUsageDescription` have clear, specific descriptions. Permissions requested lazily on first use (not at app launch). macOS uses system dialog for mic + entitlement.
+- **Thread Safety** — Audio tap callback uses `fileWriteQueue.sync` for file writes. `recognitionRequest?.append(buffer)` is documented as thread-safe. `computeAudioLevel` dispatches to `@MainActor` for UI updates. `startRecording`/`stopRecording`/`cancelRecording` are `@MainActor` — no concurrent mutation of state.
+- **Test File** — `SpeechServiceTests.swift` cleans up UserDefaults in `tearDown()`. No secrets, no PII, no network calls. No `@MainActor` on test class (follows lessons.md).
+
+## Summary
+
+| Severity | Count |
+|----------|-------|
+| Critical | 0 |
+| High     | 0 |
+| Medium   | 1 |
+| Low      | 1 |
+| **Total** | **2** |
+
+---
+
 # Security Audit — 2026-03-11 (Lightweight Sync Check + Remote Update Toast)
 
 **Scope:** Changed files on branch `feat/lightweight-sync-check`

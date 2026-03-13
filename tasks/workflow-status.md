@@ -11,10 +11,10 @@
 | 4 | /execute-plan | done | all 17 steps complete, iOS+macOS build, 122/122 tests pass |
 | 5 | /commit | done | feat/speech-to-text branch, 6a57611 |
 | 6 | /write-tests | done | 28 new tests in SpeechServiceTests.swift, 150/150 total pass |
-| 7 | /commit | >> next << | conditional |
-| 8 | /debug | not yet | optional |
-| 9 | /security-check | not yet | loop |
-| 10 | /commit | not yet | conditional |
+| 7 | /commit | done | f81a2c8, test file + workflow tracker |
+| 8 | /debug | skipped | user skipped to /security-check |
+| 9 | /security-check | done | clean on attempt 2 — temp file cleanup + timeout fix |
+| 10 | /commit | >> next << | conditional |
 | 11 | /review | not yet | loop |
 | 12 | /commit | not yet | conditional |
 | 13 | /finish-feature | not yet | |

@@ -163,6 +163,7 @@ final class SpeechService {
 
         transcribedText = result
         audioLevels = [0, 0, 0, 0, 0]
+        cleanupTempFile()
         return result
     }
 
@@ -180,6 +181,14 @@ final class SpeechService {
         recognitionRequest = nil
         transcribedText = ""
         audioLevels = [0, 0, 0, 0, 0]
+        cleanupTempFile()
+    }
+
+    private func cleanupTempFile() {
+        if let url = recordingURL {
+            try? FileManager.default.removeItem(at: url)
+        }
+        recordingURL = nil
     }
 
     // MARK: - Audio Engine (shared for both engines)
@@ -293,18 +302,29 @@ final class SpeechService {
 
         let request = SFSpeechURLRecognitionRequest(url: url)
 
-        return await withCheckedContinuation { continuation in
-            var hasResumed = false
-            recognizer.recognitionTask(with: request) { result, taskError in
-                guard !hasResumed else { return }
-                if let result, result.isFinal {
-                    hasResumed = true
-                    continuation.resume(returning: result.bestTranscription.formattedString)
-                } else if taskError != nil {
-                    hasResumed = true
-                    continuation.resume(returning: "")
+        return await withTaskGroup(of: String.self) { group in
+            group.addTask {
+                await withCheckedContinuation { continuation in
+                    var hasResumed = false
+                    recognizer.recognitionTask(with: request) { result, taskError in
+                        guard !hasResumed else { return }
+                        if let result, result.isFinal {
+                            hasResumed = true
+                            continuation.resume(returning: result.bestTranscription.formattedString)
+                        } else if taskError != nil {
+                            hasResumed = true
+                            continuation.resume(returning: "")
+                        }
+                    }
                 }
             }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(30))
+                return ""
+            }
+            let first = await group.next() ?? ""
+            group.cancelAll()
+            return first
         }
     }
 
