@@ -62,11 +62,7 @@ struct ForeverDiaryApp: App {
         networkMonitor = monitor
         syncService = SyncService(apiClient: api, authService: auth, container: resolvedContainer, networkMonitor: monitor)
 
-        if isTestHost {
-            speechService = SpeechService()
-        } else {
-            speechService = SpeechService()
-        }
+        speechService = SpeechService()
     }
 
     var body: some Scene {

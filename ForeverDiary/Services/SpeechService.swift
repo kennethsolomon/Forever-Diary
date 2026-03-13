@@ -64,7 +64,6 @@ final class SpeechService {
     @ObservationIgnored private var audioFile: AVAudioFile?
     @ObservationIgnored private var recordingURL: URL?
     @ObservationIgnored private var timerTask: Task<Void, Never>?
-    @ObservationIgnored private var levelTimerTask: Task<Void, Never>?
     @ObservationIgnored private let fileWriteQueue = DispatchQueue(label: "com.foreverdiary.speechFileWrite")
     @ObservationIgnored private let maxDuration: TimeInterval = 300
 
@@ -130,7 +129,6 @@ final class SpeechService {
 
         isRecording = false
         timerTask?.cancel()
-        levelTimerTask?.cancel()
 
         // Finalize audio engine and get recorded file URL
         let fileURL = finishAudioEngine()
@@ -174,7 +172,6 @@ final class SpeechService {
         isRecording = false
         isProcessing = false
         timerTask?.cancel()
-        levelTimerTask?.cancel()
         _ = finishAudioEngine()
         recognitionTask?.cancel()
         recognitionTask = nil
