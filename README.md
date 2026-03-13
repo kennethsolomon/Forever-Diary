@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Logo/forever-diary-logo.svg" alt="Forever Diary" width="200" height="200">
+  <img src="Logo/forever-diary-logo.png" alt="Forever Diary" width="500">
 </p>
 
 <h1 align="center">Forever Diary</h1>
