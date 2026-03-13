@@ -313,7 +313,8 @@ final class SpeechService {
             guard let self else { return }
 
             // Write to file (always, for fallback support)
-            self.fileWriteQueue.sync {
+            // Use async to avoid blocking the real-time audio thread
+            self.fileWriteQueue.async {
                 do {
                     try self.audioFile?.write(from: buffer)
                 } catch {
@@ -447,30 +448,30 @@ final class SpeechService {
             var body = Data()
 
             // file field
-            body.append("--\(boundary)\r\n".data(using: .utf8)!)
-            body.append("Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\n".data(using: .utf8)!)
-            body.append("Content-Type: audio/wav\r\n\r\n".data(using: .utf8)!)
+            body.appendString("--\(boundary)\r\n")
+            body.appendString("Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\n")
+            body.appendString("Content-Type: audio/wav\r\n\r\n")
             body.append(audioData)
-            body.append("\r\n".data(using: .utf8)!)
+            body.appendString("\r\n")
 
             // temperature field
-            body.append("--\(boundary)\r\n".data(using: .utf8)!)
-            body.append("Content-Disposition: form-data; name=\"temperature\"\r\n\r\n".data(using: .utf8)!)
-            body.append("0.0\r\n".data(using: .utf8)!)
+            body.appendString("--\(boundary)\r\n")
+            body.appendString("Content-Disposition: form-data; name=\"temperature\"\r\n\r\n")
+            body.appendString("0.0\r\n")
 
             // response_format field
-            body.append("--\(boundary)\r\n".data(using: .utf8)!)
-            body.append("Content-Disposition: form-data; name=\"response_format\"\r\n\r\n".data(using: .utf8)!)
-            body.append("json\r\n".data(using: .utf8)!)
+            body.appendString("--\(boundary)\r\n")
+            body.appendString("Content-Disposition: form-data; name=\"response_format\"\r\n\r\n")
+            body.appendString("json\r\n")
 
             // language field
             if languageIdentifier != "auto" {
-                body.append("--\(boundary)\r\n".data(using: .utf8)!)
-                body.append("Content-Disposition: form-data; name=\"language\"\r\n\r\n".data(using: .utf8)!)
-                body.append("\(languageIdentifier)\r\n".data(using: .utf8)!)
+                body.appendString("--\(boundary)\r\n")
+                body.appendString("Content-Disposition: form-data; name=\"language\"\r\n\r\n")
+                body.appendString("\(languageIdentifier)\r\n")
             }
 
-            body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+            body.appendString("--\(boundary)--\r\n")
             request.httpBody = body
 
             let (data, response) = try await URLSession.shared.data(for: request)
@@ -709,5 +710,15 @@ final class SpeechService {
         var favorites = favoriteLanguages
         favorites.removeAll { $0 == code }
         favoriteLanguages = favorites
+    }
+}
+
+// MARK: - Data Extension
+
+private extension Data {
+    mutating func appendString(_ string: String) {
+        if let data = string.data(using: .utf8) {
+            append(data)
+        }
     }
 }

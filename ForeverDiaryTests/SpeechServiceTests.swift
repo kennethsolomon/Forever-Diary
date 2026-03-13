@@ -462,14 +462,38 @@ final class SpeechServiceTests: XCTestCase {
     // MARK: - Test Server Connection
 
     @MainActor
-    func testServerConnectionWithInvalidURL() async {
+    func testServerConnectionWithEmptyURL() async {
         let service = SpeechService()
         service.serverURL = ""
         await service.testServerConnection()
         if case .failed(let msg) = service.serverConnectionState {
             XCTAssertEqual(msg, "Invalid URL")
         } else {
-            XCTFail("Expected .failed state for invalid URL, got \(service.serverConnectionState)")
+            XCTFail("Expected .failed state for empty URL, got \(service.serverConnectionState)")
+        }
+    }
+
+    @MainActor
+    func testServerConnectionWithNonHttpURL() async {
+        let service = SpeechService()
+        service.serverURL = "ftp://invalid"
+        await service.testServerConnection()
+        if case .failed(let msg) = service.serverConnectionState {
+            XCTAssertEqual(msg, "Invalid URL")
+        } else {
+            XCTFail("Expected .failed state for non-http URL, got \(service.serverConnectionState)")
+        }
+    }
+
+    @MainActor
+    func testServerConnectionWithWhitespaceOnlyURL() async {
+        let service = SpeechService()
+        service.serverURL = "   "
+        await service.testServerConnection()
+        if case .failed(let msg) = service.serverConnectionState {
+            XCTAssertEqual(msg, "Invalid URL")
+        } else {
+            XCTFail("Expected .failed state for whitespace-only URL, got \(service.serverConnectionState)")
         }
     }
 

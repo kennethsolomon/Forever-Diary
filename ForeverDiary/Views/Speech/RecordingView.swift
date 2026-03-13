@@ -53,6 +53,7 @@ struct RecordingView: View {
         .padding(.horizontal, 24)
         .background(Color("backgroundPrimary"))
         .task {
+            guard !Task.isCancelled else { return }
             await speechService.startRecording()
         }
         .onDisappear {
