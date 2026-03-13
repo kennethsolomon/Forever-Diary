@@ -48,6 +48,11 @@ struct RecordingView: View {
         .task {
             await speechService.startRecording()
         }
+        .onDisappear {
+            if speechService.isRecording || speechService.isProcessing {
+                speechService.cancelRecording()
+            }
+        }
         #if os(iOS)
         .sheet(isPresented: $showLanguagePicker) {
             LanguagePickerView()
@@ -90,6 +95,8 @@ struct RecordingView: View {
     @ViewBuilder
     private var quickSwitchPills: some View {
         let favorites = speechService.favoriteLanguages.filter { $0 != speechService.languageIdentifier }
+        // Disable during Apple Speech recording — live recognizer uses the language set at start
+        let isDisabled = speechService.isRecording && speechService.engineChoice == .apple
         if !favorites.isEmpty {
             HStack(spacing: 4) {
                 ForEach(favorites, id: \.self) { code in
@@ -100,7 +107,7 @@ struct RecordingView: View {
                     } label: {
                         Text(code.uppercased())
                             .font(.system(.caption2, design: .rounded, weight: .semibold))
-                            .foregroundStyle(Color("textSecondary"))
+                            .foregroundStyle(isDisabled ? Color("textSecondary").opacity(0.3) : Color("textSecondary"))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 5)
                             .background(
@@ -109,6 +116,7 @@ struct RecordingView: View {
                             )
                     }
                     .buttonStyle(.plain)
+                    .disabled(isDisabled)
                 }
             }
         }
@@ -173,29 +181,53 @@ struct RecordingView: View {
         .foregroundStyle(Color("textSecondary"))
     }
 
-    // MARK: - Stop Button
+    // MARK: - Stop / Done Button
 
     private var stopButton: some View {
-        Button {
-            Task {
-                let text = await speechService.stopRecording()
-                if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    onTranscription(text)
+        Group {
+            if speechService.isRecording {
+                Button {
+                    Task {
+                        let text = await speechService.stopRecording()
+                        if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            onTranscription(text)
+                        }
+                        dismiss()
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "square.fill")
+                            .font(.system(size: 12))
+                        Text("Stop")
+                            .font(.system(.body, design: .rounded, weight: .semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .frame(width: 140, height: 44)
+                    .background(Capsule().fill(Color("destructive")))
                 }
-                dismiss()
+                .buttonStyle(.plain)
+            } else if !speechService.isProcessing && !speechService.transcribedText.isEmpty {
+                // Timer expired — recording stopped, result ready
+                Button {
+                    let text = speechService.transcribedText
+                    if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        onTranscription(text)
+                    }
+                    dismiss()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 12, weight: .bold))
+                        Text("Done")
+                            .font(.system(.body, design: .rounded, weight: .semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .frame(width: 140, height: 44)
+                    .background(Capsule().fill(Color("accentBright")))
+                }
+                .buttonStyle(.plain)
             }
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "square.fill")
-                    .font(.system(size: 12))
-                Text("Stop")
-                    .font(.system(.body, design: .rounded, weight: .semibold))
-            }
-            .foregroundStyle(.white)
-            .frame(width: 140, height: 44)
-            .background(Capsule().fill(Color("destructive")))
         }
-        .buttonStyle(.plain)
     }
 }
 

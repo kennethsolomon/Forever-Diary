@@ -147,16 +147,19 @@ final class SpeechService {
             }
         }
 
-        // Fallback if primary returned empty
+        // Fallback if primary returned empty (skip WhisperKit fallback if model not downloaded to avoid surprise ~809MB download)
         if result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let url = fileURL {
             let fallback: SpeechEngineType = engineChoice == .apple ? .whisperKit : .apple
-            isProcessing = true
-            if fallback == .whisperKit {
-                result = await transcribeWithWhisperKit(url: url)
-            } else {
-                result = await transcribeFileWithAppleSpeech(url: url)
+            let shouldAttemptFallback = fallback != .whisperKit || whisperModelState == .downloaded
+            if shouldAttemptFallback {
+                isProcessing = true
+                if fallback == .whisperKit {
+                    result = await transcribeWithWhisperKit(url: url)
+                } else {
+                    result = await transcribeFileWithAppleSpeech(url: url)
+                }
+                isProcessing = false
             }
-            isProcessing = false
         }
 
         transcribedText = result
@@ -229,7 +232,8 @@ final class SpeechService {
                     recognitionRequest?.requiresOnDeviceRecognition = true
                 }
 
-                recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest!) { [weak self] result, taskError in
+                guard let request = recognitionRequest else { return }
+                recognitionTask = speechRecognizer.recognitionTask(with: request) { [weak self] result, taskError in
                     guard let self else { return }
                     if let result {
                         Task { @MainActor in
@@ -252,7 +256,11 @@ final class SpeechService {
 
             // Write to file (always, for fallback support)
             self.fileWriteQueue.sync {
-                try? self.audioFile?.write(from: buffer)
+                do {
+                    try self.audioFile?.write(from: buffer)
+                } catch {
+                    print("[SpeechService] Audio file write failed: \(error.localizedDescription)")
+                }
             }
 
             // Feed Apple Speech recognition
