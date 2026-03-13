@@ -9,11 +9,16 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ## [Unreleased]
 
 ### Added
-- Voice dictation with dual-engine speech-to-text: Apple Speech (streaming) + WhisperKit (on-device Whisper model) with automatic fallback if primary engine returns empty
+- Voice dictation with dual-engine speech-to-text: Apple Speech (streaming) + WhisperKit large-v3-turbo (on-device, ~809 MB) with automatic fallback if primary engine returns empty
+- 99-language support via WhisperKit language list including Filipino (Tagalog), with explicit language passing to transcription for improved accuracy
+- Favorite languages (up to 5) with quick-switch pills on recording view for fast language switching
+- Language picker redesigned with search, favorites section with star icons, swipe-to-add/remove favorites, and Apple Speech compatibility notes
+- Noise token cleanup: strips `[cough]`, `[music]`, `(laughter)`, `[BLANK_AUDIO]` and similar artifacts from WhisperKit output
+- Apple Speech locale mapping with graceful fallback — unsupported languages (e.g., Tagalog) skip Apple Speech and use WhisperKit only
 - Recording UI with live waveform visualization, countdown timer (5-min cap), and real-time transcript preview (iOS sheet / macOS popover)
-- Speech engine picker in Settings (Apple Speech or WhisperKit) with language selection and WhisperKit model download/delete management
+- Speech engine picker in Settings (Apple Speech or WhisperKit) with language selection and WhisperKit model download/delete management (iOS + macOS)
 - Mic button in Home and Entry Detail action bars for quick voice-to-text entry on both iOS and macOS
-- 28 new XCTest cases for SpeechService covering enums, initial state, UserDefaults persistence, locale support, and state reset (now 150 total)
+- 53 new XCTest cases for SpeechService covering enums, initial state, language controls, transcription cleanup, locale mapping, favorites, and state reset (now 177 total)
 - Lightweight sync change-check: `GET /sync?check=true&since=<ts>` returns `{ hasChanges, serverTime }` without fetching item data — periodic sync now polls cheaply before doing a full pull
 - "Updated from another device" toast on iOS and macOS — appears when `pullRemote()` applies remote entry changes, auto-dismisses after 3 seconds
 - 11 new XCTest cases covering change-check guard clauses, toast trigger/dismiss/retrigger, LWW return values, and periodic sync lifecycle (now 122 total)
@@ -62,6 +67,10 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - 90 unit tests (theme, markdown parsing, calendar navigation)
 
 ### Fixed
+- Recording sheet dismiss now cancels active recording and releases microphone via `onDisappear` handler
+- WhisperKit fallback skipped when model not downloaded to prevent surprise ~809 MB download during transcription
+- Timer expiry now shows "Done" button so transcription result can be saved (previously lost)
+- Quick-switch language pills disabled during Apple Speech recording since live recognizer can't change language mid-session
 - Sync race condition: opening the app no longer overwrites newer remote edits with stale local data — `syncAll()` now pulls before pushing, debounce is cancelled on remote update, and saves are skipped when text/location is unchanged
 - App no longer redirects to login when device has no internet — `refreshIfNeeded()` now returns silently instead of calling `signOut()` on network failure
 - `syncAll()` skips network operations immediately when offline instead of failing mid-sync
