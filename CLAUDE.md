@@ -97,65 +97,237 @@ xcodebuild test -scheme ForeverDiary -destination 'platform=iOS Simulator,name=i
 - XcodeGen generates `.xcodeproj` from `project.yml` — do not edit `.xcodeproj` directly
 - Speech-to-text has 3 engines: Local Server (whisper.cpp, primary), WhisperKit on-device (whisper-small, fallback), Apple Speech. No automatic fallback — user selects engine explicitly. See `docs/whisper-server-setup.md` for server setup.
 
-## Workflow
+## Workflow — Follow This Order
+<!-- LOCK -->
 
-**Flow:** `/brainstorm` → `/frontend-design` → `/write-plan` → `/execute-plan` → `/commit` → `/write-tests` → `/commit` → `/debug` → `/security-check` → `/commit` → `/review` → `/commit` → `/finish-feature` → `/release`
+**Flow:** Read → Explore → Design → Plan → Branch → Migrate → Write Tests → Implement → Lint → Verify Tests → Security → Review → Finish
 
 Progress is tracked in `tasks/workflow-status.md`. This file persists across conversations.
 
 | # | Step | Command | Type | Loop? |
 |---|------|---------|------|-------|
-| 1 | Explore | `/brainstorm` | required | no |
-| 2 | UI Design | `/frontend-design` | optional (confirm to skip) | no |
-| 3 | Plan | `/write-plan` | required | no |
-| 4 | Implement | `/execute-plan` | required | no |
-| 5 | Commit | `/commit` | required | no |
-| 6 | Test | `/write-tests` | required | no |
-| 7 | Commit | `/commit` | conditional (auto-skip if no changes) | no |
-| 8 | Debug | `/debug` | optional (confirm to skip) | no |
-| 9 | Security | `/security-check` | required | yes — must reach 0 issues (all severities) |
-| 10 | Commit | `/commit` | conditional (auto-skip if security was clean) | no |
-| 11 | Review | `/review` | required | yes — must reach 0 issues (including nitpicks) |
-| 12 | Commit | `/commit` | conditional (auto-skip if review was clean) | no |
-| 13 | Finalize | `/finish-feature` | required | no |
-| 14 | Release | `/release` | optional (confirm to skip) | no |
+| 1 | Read Todo | read `tasks/todo.md` | required | no |
+| 2 | Read Lessons | read `tasks/lessons.md` | required | no |
+| 3 | Explore | `/brainstorm` | required | no |
+| 4 | Design | `/frontend-design` | optional (confirm to skip) | no |
+| 5 | Plan | `/write-plan` | required | no |
+| 6 | Branch | `/branch` | required | no |
+| 7 | Migrate | `/schema-migrate` | optional (confirm to skip) | no |
+| 8 | Write Tests | `/write-tests` | required | no |
+| 9 | Implement | `/execute-plan` | required | no |
+| 10 | Commit | `/smart-commit` | required | no |
+| 11 | Lint | `/lint` | required | yes — must be clean |
+| 12 | Commit | `/smart-commit` | conditional (skip if lint was clean) | no |
+| 13 | Verify Tests | `/test` | required | yes — 100% coverage required |
+| 14 | Commit | `/smart-commit` | conditional (skip if test fixes needed) | no |
+| 15 | Security | `/security-check` | required | yes — must reach 0 issues |
+| 16 | Commit | `/smart-commit` | conditional (skip if security was clean) | no |
+| 17 | Review | `/review` | required | yes — must reach 0 issues |
+| 18 | Commit | `/smart-commit` | conditional (skip if review was clean) | no |
+| 19 | Update | `/update-task` | required | no |
+| 20 | Finalize | `/finish-feature` | required | no |
+| 21 | Release | `/release` | optional (confirm to skip) | no |
+
+### Step Details
+
+1.  **Read** `tasks/todo.md` — pick the next incomplete task
+2.  **Read** `tasks/lessons.md` — review past corrections before writing code
+3.  **Explore** — run `/brainstorm` to clarify requirements, constraints, and approach. No code in this step.
+4.  **Design** — run `/frontend-design` for UI mockup. No code — design only. Skip if backend-only.
+5.  **Plan** — run `/write-plan` to write a decision-complete plan into `tasks/todo.md` using brainstorm + design outputs. No code in this step.
+6.  **Branch** — run `/branch` to create a feature branch auto-named from the current task.
+7.  **Migrate** — run `/schema-migrate` for database changes. Skip if no schema changes needed.
+8.  **Write Tests** — run `/write-tests` (TDD red phase). Write failing tests for all planned code. If modifying existing behavior, update existing tests first. Tests SHOULD fail — no implementation yet.
+9.  **Implement** — run `/execute-plan` to execute `tasks/todo.md` checkboxes in small batches, making the failing tests pass (TDD green phase). Log progress to `tasks/progress.md`.
+10. **Commit** — run `/smart-commit` to commit tests + implementation
+11. **Lint** — run `/lint` — auto-detects and runs all project linters. Fix all issues immediately, then re-run until clean. Do not ask to re-run — fix and re-run automatically.
+12. **Commit** — run `/smart-commit` if lint required fixes. Auto-skip if lint was clean.
+13. **Verify Tests** — run `/test` — auto-detects and runs all project test suites. **100% test coverage required.** Fix failures immediately, then re-run. Do not ask to re-run — fix and re-run automatically.
+14. **Commit** — run `/smart-commit` if test fixes were needed. Auto-skip if tests passed first try.
+15. **Security** — run `/security-check`. Must reach 0 issues across all severities. Fix issues immediately, commit, then re-run. Loop until clean.
+16. **Commit** — run `/smart-commit` if security required fixes. Auto-skip if clean.
+17. **Review** — run `/review`. Must reach 0 issues including nitpicks. Fix issues immediately, commit, then re-run. Loop until clean.
+18. **Commit** — run `/smart-commit` if review required fixes. Auto-skip if clean.
+19. **Update** — run `/update-task` to mark the task done in `tasks/todo.md` and log completion to `tasks/progress.md`.
+20. **Finalize** — run `/finish-feature` for changelog + PR
+21. **Release** — run `/release` if deploying. Skip if not ready.
 
 ### Workflow Tracker Rules
 
-**These rules are mandatory for every slash command execution:**
+**These rules are mandatory for every step:**
 
-1. **Read tracker first.** At the start of every slash command, read `tasks/workflow-status.md` to verify the current step. If the command being run does not match the `>> next <<` step, STOP and ask the user to confirm skipping the intervening steps.
+1. **Read tracker first.** At the start of every step, read `tasks/workflow-status.md` to verify the current step. If the step being run does not match the `>> next <<` step, STOP and ask the user to confirm skipping the intervening steps.
 
-2. **Update tracker after.** At the end of every slash command, update `tasks/workflow-status.md`:
+2. **Update tracker after.** At the end of every step, update `tasks/workflow-status.md`:
    - Set the current step's Status to `done`, `skipped`, or `partial`
    - Add relevant Notes (e.g., "clean on attempt 2", "backend-only, no UI")
    - Move `>> next <<` to the next pending step
-   - Print the full dashboard table in the response
 
-3. **Optional steps** (steps 2, 8, 14): Ask the user "Skip [step]?" and require explicit confirmation. Record the reason in Notes.
+3. **Optional steps** (4, 7, 21): Ask the user "Skip [step]?" and require explicit confirmation. Record the reason in Notes.
 
-4. **Conditional commits** (steps 7, 10, 12): Auto-skip with a reason if no changes were made. Examples: "no new changes after /write-tests", "security-check was clean", "review was clean".
+4. **Conditional commits** (12, 14, 16, 18): Auto-skip if no changes were made. Record reason (e.g., "lint was clean", "tests passed first try").
 
-5. **Security-check loop** (step 9): Must reach **0 issues across all severities** (critical, high, medium, low, informational). If any issues remain: fix them → `/commit` → `/security-check` again. Track attempt number in Notes (e.g., "clean on attempt 3").
+5. **Loop steps are HARD GATES** (11, 13, 15, 17): These steps BLOCK all forward progress until they pass clean. Fix issues immediately and re-run. Do NOT ask the user to re-run — fix and re-run automatically. Track attempt number in Notes (e.g., "clean on attempt 3").
+   - **Step 11 (Lint)**: All detected linting tools must pass — every single one.
+   - **Step 13 (Verify Tests)**: All detected test suites (BE + FE) must pass with 100% coverage on new code.
+   - **Step 15 (Security)**: 0 issues across all severities.
+   - **Step 17 (Review)**: 0 issues including nitpicks.
+   - **DO NOT mark these steps as `done` until every check passes.** If even one tool fails, the step is NOT done. Never proceed to the next step with errors remaining.
 
-6. **Review loop** (step 11): Must reach **0 issues including nitpicks**. If any issues remain: fix them → `/commit` → `/review` again. Track attempt number in Notes.
+6. **Never skip steps without confirmation.** Steps cannot run out of order. Quality gate steps (11, 13, 15, 17) can NEVER be skipped.
 
-7. **Never skip steps without confirmation.** Steps cannot run out of order. If a user invokes a command that is not the next step, ask for explicit confirmation to skip all steps in between.
+7. **Never auto-advance.** When one step completes, stop and tell the user which step is next. Do not proceed automatically.
 
-8. **Never auto-advance.** When one step completes, stop and tell the user which command to run next. Do not proceed automatically.
+8. **Never write code during design or plan phases.** Steps 1-5 are reading/exploring/planning/design only — no code, no file edits (except `tasks/` files).
 
-9. **Never write code during design or plan phases.** Steps 1-3 are design/planning only — no code, no file edits (except tasks/ files).
+9. **Step completion summary is NON-NEGOTIABLE.** After finishing ANY step, you MUST output a summary block in this exact format before stopping:
+
+```
+--- Step [#] [Name]: [done/skipped/partial] ---
+Summary: [1-2 sentence summary of what was done]
+Next step: [#] [Name] — run `[command]`
+```
+
+This tells the user exactly what happened and what to do next. Never finish a step silently.
 
 ### Tracker Reset
 
-- `/brainstorm` checks if `tasks/workflow-status.md` has any `done` or `skipped` steps. If yes, ask: "Existing workflow detected. Start fresh and reset tracker?"
-- The user can request a tracker reset at any time (e.g., "reset workflow").
+- When starting a new task, check if `tasks/workflow-status.md` has any `done` or `skipped` steps. If yes, ask: "Existing workflow detected. Start fresh and reset tracker?"
 - Reset sets all steps to `not yet` and marks step 1 as `>> next <<`.
 
-### Frontend Design
-- `/frontend-design` is a **design phase** — mockups and visual direction only, no code
-- If skipping, go directly from `/brainstorm` to `/write-plan`
-- `/write-plan` should reference both brainstorm findings AND any frontend design outputs
+### Bug Fix Flow
+
+When fixing a bug (not building a feature), use `/debug` as the entry point. This sets up a shorter workflow:
+
+| # | Step | Command |
+|---|------|---------|
+| 1 | Debug | `/debug` |
+| 2 | Branch | `/branch` |
+| 3 | Write Tests | `/write-tests` (regression test) |
+| 4 | Fix | implement the fix |
+| 5 | Commit | `/smart-commit` |
+| 6 | Lint | `/lint` |
+| 7 | Commit | `/smart-commit` (skip if clean) |
+| 8 | Verify Tests | `/test` |
+| 9 | Commit | `/smart-commit` (skip if clean) |
+| 10 | Security | `/security-check` |
+| 11 | Commit | `/smart-commit` (skip if clean) |
+| 12 | Review | `/review` |
+| 13 | Commit | `/smart-commit` (skip if clean) |
+| 14 | Update | `/update-task` |
+| 15 | Finalize | `/finish-feature` |
+
+Start with `/debug` to investigate, then follow the abbreviated flow.
+
+## Sub-Agent Patterns
+<!-- BEGIN:sub-agent-patterns -->
+
+Use Claude Code sub-agents to parallelize independent work and speed up development.
+
+### Codebase Exploration (before implementation)
+
+Before implementing a feature, launch parallel Explore agents to understand the affected areas:
+
+```
+Use Agent tool with subagent_type="Explore" — launch all in a single message:
+  - Agent 1: Explore related models, migrations, and relationships
+  - Agent 2: Explore existing routes, controllers, and middleware
+  - Agent 3: Explore test patterns and existing test coverage for the area
+```
+
+This replaces sequential file reading and gives a complete picture before writing code.
+
+### Parallel Quality Checks (/lint)
+
+After formatters run, launch analyzers in parallel (both are read-only):
+
+```
+1. Formatters (sequential — modify files)
+2. Then in parallel:
+   - Agent 1: Static analysis
+   - Agent 2: Code quality checks
+```
+
+### Code Review Parallelization
+
+For `/review` and `/security-check`, split into parallel agents for faster feedback:
+
+```
+Launch in a single message:
+  - Agent 1: Security review — OWASP, injection, auth bypass
+  - Agent 2: Performance review — N+1 queries, missing indexes, cache misses
+  - Agent 3: Test coverage gaps — untested paths, missing edge cases
+```
+
+### Worktree Isolation for Risky Changes
+
+For refactors or experimental approaches, use `isolation: "worktree"` to try the change on an isolated copy:
+
+```
+Agent tool with isolation: "worktree":
+  - Try the refactor in isolation
+  - If it works, apply the same changes to the main worktree
+  - If it fails, the worktree is discarded — no cleanup needed
+```
+
+### Background Agents for Long-Running Tasks
+
+Use `run_in_background: true` for tasks that don't block your next step:
+
+```
+- Background agent: Run full test suite while you continue implementing
+- Background agent: Static analysis while you fix other suggestions
+- You'll be notified when they complete
+```
+<!-- END:sub-agent-patterns -->
+
+## Project Memory
+
+Read these files at the start of every task:
+- `tasks/findings.md` — key decisions and project constraints
+- `tasks/lessons.md` — past mistakes and how to avoid them
+- `tasks/todo.md` — current plan
+
+Write to these files continuously:
+- `tasks/progress.md` — every attempt, error, and resolution
+- `tasks/findings.md` — anything important discovered mid-task
+
+**Never overwrite** `tasks/lessons.md` or `tasks/security-findings.md`.
+
+## Lessons Capture
+
+When the user corrects you:
+- Explicit: `lesson:`, `remember:`, `don't do this again:` → append to `tasks/lessons.md` immediately
+- Implicit: detect "no", "don't", "instead", "wrong" → ask "Should I add this to lessons.md?" → append on confirmation
+
+Entry format:
+```
+### [YYYY-MM-DD] [Brief title]
+**Mistake:** What went wrong
+**Root cause:** Why it happened
+**Prevention:** What to do differently
+```
+
+## Testing — TDD, 100% Coverage Required
+
+Tests are written **before** implementation (step 8) and verified **after** (step 13).
+
+### TDD Flow
+
+1. `/write-tests` — write failing tests based on the plan (RED)
+2. `/execute-plan` — implement code to make tests pass (GREEN)
+3. `/test` — verify all tests pass with 100% coverage (VERIFY)
+
+Every new function, endpoint, component, and module needs tests. No code proceeds past step 13 without 100% coverage on new code.
+
+## 3-Strike Protocol
+
+When blocked:
+1. Log attempt + error to `tasks/progress.md`
+2. Try a different approach
+3. On 3rd failure — stop and ask the user what was tried
+
+Never retry the same failing approach.
 
 ## Architectural Change Log
 
