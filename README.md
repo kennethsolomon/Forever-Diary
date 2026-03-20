@@ -264,6 +264,128 @@ No data is collected without user action. All data stays on-device unless cloud 
 - Whisper server identity verified before sending audio
 - Audio sent over local network only — no cloud transcription
 
+## MCP Server (Claude Integration)
+
+The `mcp/` directory contains a Node.js MCP server that gives Claude read access to your diary entries. It supports two transports:
+
+| Transport | Use case |
+|-----------|----------|
+| **stdio** | Claude Code (local, via `.mcp.json`) |
+| **HTTP** | Claude.ai web connector (deployed on Railway) |
+
+### Architecture
+
+```
+Claude Code / Claude.ai
+        │
+        ▼
+  MCP Server (Node.js)
+        │  read-only
+        ▼
+  DynamoDB (forever-diary table)
+```
+
+### Tools exposed to Claude
+
+| Tool | Description |
+|------|-------------|
+| `get_today_entry` | Fetch today's diary entry |
+| `get_entry_by_date` | Fetch entry for a specific date (YYYY-MM-DD) |
+| `get_entries_on_this_day` | All entries for today's month/day across every year |
+| `get_recent_entries` | Last N days of entries (default 7, max 30) |
+
+### Files
+
+```
+mcp/
+├── src/
+│   ├── server.ts       # shared tool definitions + DynamoDB logic
+│   ├── index.ts        # stdio entry point (Claude Code)
+│   └── http.ts         # HTTP entry point (Claude.ai / Railway)
+├── package.json
+├── tsconfig.json
+└── railway.toml        # Railway deployment config
+```
+
+### AWS IAM setup
+
+Create a dedicated read-only IAM user (`forever-diary-mcp-readonly`) with this inline policy:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": ["dynamodb:Query", "dynamodb:GetItem"],
+    "Resource": "arn:aws:dynamodb:ap-southeast-1:*:table/forever-diary"
+  }]
+}
+```
+
+Generate an access key for this user — these credentials are used by the MCP server.
+
+### Environment variables
+
+| Variable | Description |
+|----------|-------------|
+| `AWS_REGION` | DynamoDB region — `ap-southeast-1` |
+| `AWS_ACCESS_KEY_ID` | IAM user access key |
+| `AWS_SECRET_ACCESS_KEY` | IAM user secret key |
+| `DIARY_USER_ID` | Your Cognito Identity ID (DynamoDB partition key) — looks like `ap-southeast-2:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`. Find it in the DynamoDB console under your table's items. |
+| `DYNAMODB_TABLE` | Table name — `forever-diary` |
+| `MCP_API_KEY` | Optional bearer token to protect the HTTP endpoint |
+
+### Local setup (Claude Code)
+
+1. Build the server:
+```bash
+cd mcp && npm install && npm run build
+```
+
+2. Create `.mcp.json` in the project root (already gitignored — do not commit):
+```json
+{
+  "mcpServers": {
+    "forever-diary": {
+      "command": "node",
+      "args": ["/absolute/path/to/forever-diary/mcp/dist/index.js"],
+      "env": {
+        "AWS_REGION": "ap-southeast-1",
+        "AWS_ACCESS_KEY_ID": "your-key",
+        "AWS_SECRET_ACCESS_KEY": "your-secret",
+        "DIARY_USER_ID": "your-cognito-identity-id",
+        "DYNAMODB_TABLE": "forever-diary"
+      }
+    }
+  }
+}
+```
+
+3. Restart Claude Code — it auto-discovers `.mcp.json`.
+
+### Remote deployment (Claude.ai)
+
+Deployed on **Railway** at `https://forever-diary-production.up.railway.app`.
+
+Railway environment variables mirror the table above. The `railway.toml` in `mcp/` configures the build and start commands automatically.
+
+To register in Claude.ai:
+- Go to **Settings → Connectors → Add custom connector**
+- **Name:** `Forever Diary`
+- **Remote MCP server URL:** `https://forever-diary-production.up.railway.app/mcp`
+
+### Local build
+
+```bash
+cd mcp
+npm install
+npm run build        # compiles TypeScript → dist/
+npm start            # stdio mode (Claude Code)
+npm run start:http   # HTTP mode (port 3000)
+```
+
+---
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
