@@ -19,6 +19,15 @@ function makeDynamoClient() {
 
 // ---- Helpers ---------------------------------------------------------------
 
+interface CheckIn {
+  templateId: string;
+  label: string;
+  type: string;
+  boolValue?: boolean;
+  textValue?: string;
+  numberValue?: number;
+}
+
 interface DiaryEntry {
   date: string;
   year: number;
@@ -27,6 +36,8 @@ interface DiaryEntry {
   text: string;
   location: string | null;
   updatedAt: string;
+  checkIns: CheckIn[];
+  photoCount: number;
 }
 
 function formatEntry(item: Record<string, unknown>): DiaryEntry {
@@ -38,7 +49,16 @@ function formatEntry(item: Record<string, unknown>): DiaryEntry {
     text: ((item.diaryText as string) || "").trim() || "(no text written)",
     location: (item.locationText as string) || null,
     updatedAt: (item.updatedAt as string) ?? "",
+    checkIns: [],
+    photoCount: 0,
   };
+}
+
+function formatCheckInValue(ci: CheckIn): string {
+  if (ci.boolValue !== undefined) return ci.boolValue ? "Yes" : "No";
+  if (ci.textValue !== undefined) return ci.textValue;
+  if (ci.numberValue !== undefined) return String(ci.numberValue);
+  return "(no value)";
 }
 
 function entriesToText(entries: DiaryEntry[]): string {
@@ -46,12 +66,22 @@ function entriesToText(entries: DiaryEntry[]): string {
   return entries
     .map((e) => {
       const loc = e.location ? ` — ${e.location}` : "";
-      return `[${e.weekday}, ${e.monthDayKey}/${e.year}${loc}]\n${e.text}`;
+      let result = `[${e.weekday}, ${e.monthDayKey}/${e.year}${loc}]\n${e.text}`;
+      if (e.checkIns.length > 0) {
+        const checkInLines = e.checkIns
+          .map((ci) => `  - ${ci.label}: ${formatCheckInValue(ci)}`)
+          .join("\n");
+        result += `\n\nCheck-ins:\n${checkInLines}`;
+      }
+      if (e.photoCount > 0) {
+        result += `\n\nPhotos: ${e.photoCount} photo${e.photoCount > 1 ? "s" : ""} attached`;
+      }
+      return result;
     })
     .join("\n\n---\n\n");
 }
 
-async function queryEntries(userId: string, skPrefix: string): Promise<DiaryEntry[]> {
+async function queryByPrefix(userId: string, skPrefix: string): Promise<Record<string, unknown>[]> {
   const dynamo = makeDynamoClient();
   const result = await dynamo.send(
     new QueryCommand({
@@ -64,10 +94,77 @@ async function queryEntries(userId: string, skPrefix: string): Promise<DiaryEntr
       },
     })
   );
-  return (result.Items ?? [])
-    .map((item) => unmarshall(item))
-    .map(formatEntry)
-    .sort((a, b) => a.date.localeCompare(b.date));
+  return (result.Items ?? []).map((item) => unmarshall(item));
+}
+
+async function queryTemplates(userId: string): Promise<Map<string, { label: string; type: string }>> {
+  const items = await queryByPrefix(userId, "template#");
+  const map = new Map<string, { label: string; type: string }>();
+  for (const item of items) {
+    const id = item.id as string;
+    if (id && item.isActive !== false) {
+      map.set(id, { label: (item.label as string) ?? "", type: (item.type as string) ?? "" });
+    }
+  }
+  return map;
+}
+
+async function queryPhotos(userId: string): Promise<Map<string, number>> {
+  const items = await queryByPrefix(userId, "photo#");
+  const countMap = new Map<string, number>();
+  for (const item of items) {
+    const key = `${item.entryMonthDayKey}#${item.entryYear}`;
+    countMap.set(key, (countMap.get(key) ?? 0) + 1);
+  }
+  return countMap;
+}
+
+function attachCheckInsAndPhotos(
+  entries: DiaryEntry[],
+  checkInItems: Record<string, unknown>[],
+  templates: Map<string, { label: string; type: string }>,
+  photoCounts: Map<string, number>,
+): void {
+  const checkInsByEntry = new Map<string, CheckIn[]>();
+  for (const ci of checkInItems) {
+    const sk = ci.sk as string;
+    // sk format: checkin#MM-DD#YYYY#UUID
+    const parts = sk.split("#");
+    if (parts.length < 4) continue;
+    const entryKey = `${parts[1]}#${parts[2]}`;
+    const templateId = ci.templateId as string;
+    const tmpl = templates.get(templateId);
+    const checkIn: CheckIn = {
+      templateId,
+      label: tmpl?.label ?? templateId,
+      type: tmpl?.type ?? "unknown",
+      ...(ci.boolValue !== undefined && { boolValue: ci.boolValue as boolean }),
+      ...(ci.textValue !== undefined && { textValue: ci.textValue as string }),
+      ...(ci.numberValue !== undefined && { numberValue: ci.numberValue as number }),
+    };
+    const list = checkInsByEntry.get(entryKey) ?? [];
+    list.push(checkIn);
+    checkInsByEntry.set(entryKey, list);
+  }
+
+  for (const entry of entries) {
+    const entryKey = `${entry.monthDayKey}#${entry.year}`;
+    entry.checkIns = checkInsByEntry.get(entryKey) ?? [];
+    entry.photoCount = photoCounts.get(entryKey) ?? 0;
+  }
+}
+
+async function queryEntries(userId: string, skPrefix: string): Promise<DiaryEntry[]> {
+  const [entryItems, checkInItems, templates, photoCounts] = await Promise.all([
+    queryByPrefix(userId, skPrefix),
+    queryByPrefix(userId, skPrefix.replace("entry#", "checkin#")),
+    queryTemplates(userId),
+    queryPhotos(userId),
+  ]);
+
+  const entries = entryItems.map(formatEntry);
+  attachCheckInsAndPhotos(entries, checkInItems, templates, photoCounts);
+  return entries.sort((a, b) => a.date.localeCompare(b.date));
 }
 
 function todayMonthDay(): string {
@@ -159,18 +256,44 @@ export function createServer(): Server {
       if (name === "get_recent_entries") {
         const { days = 7 } = (args ?? {}) as { days?: number };
         const limit = Math.min(Math.max(1, days), 30);
-        const allEntries: DiaryEntry[] = [];
 
+        // Build per-day prefixes
+        const dayPrefixes: { entry: string; checkin: string }[] = [];
         for (let i = 0; i < limit; i++) {
           const d = new Date();
           d.setDate(d.getDate() - i);
           const mm = String(d.getMonth() + 1).padStart(2, "0");
           const dd = String(d.getDate()).padStart(2, "0");
           const year = d.getFullYear();
-          const entries = await queryEntries(userId, `entry#${mm}-${dd}#${year}`);
-          allEntries.push(...entries);
+          dayPrefixes.push({
+            entry: `entry#${mm}-${dd}#${year}`,
+            checkin: `checkin#${mm}-${dd}#${year}`,
+          });
         }
 
+        // Query all days + templates + photos in parallel
+        const entryQueries = dayPrefixes.map((p) => queryByPrefix(userId, p.entry));
+        const checkInQueries = dayPrefixes.map((p) => queryByPrefix(userId, p.checkin));
+        const [templates, photoCounts, ...results] = await Promise.all([
+          queryTemplates(userId),
+          queryPhotos(userId),
+          ...entryQueries,
+          ...checkInQueries,
+        ]);
+
+        const entryResults = results.slice(0, dayPrefixes.length) as Record<string, unknown>[][];
+        const checkInResults = results.slice(dayPrefixes.length) as Record<string, unknown>[][];
+
+        const allEntryItems = entryResults.flat();
+        const allCheckInItems = checkInResults.flat();
+
+        const allEntries = allEntryItems.map(formatEntry);
+        attachCheckInsAndPhotos(
+          allEntries,
+          allCheckInItems,
+          templates as Map<string, { label: string; type: string }>,
+          photoCounts as Map<string, number>,
+        );
         allEntries.sort((a, b) => b.date.localeCompare(a.date));
         return { content: [{ type: "text" as const, text: entriesToText(allEntries) }] };
       }
