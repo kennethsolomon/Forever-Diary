@@ -1,0 +1,24 @@
+{
+  "name": "forever-diary-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for Forever Diary — gives Claude read access to diary entries",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "start:http": "node dist/http.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.0.0",
+    "@aws-sdk/util-dynamodb": "^3.0.0",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@types/express": "^5.0.0",
+    "express": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}

@@ -42,3 +42,10 @@ build/
 # Misc
 *.swp
 *.lock
+
+# MCP server config (contains AWS credentials — do not commit)
+.mcp.json
+
+# MCP server build output
+mcp/dist/
+mcp/node_modules/
