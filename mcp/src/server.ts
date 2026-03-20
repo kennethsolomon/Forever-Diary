@@ -5,11 +5,13 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { DynamoDBClient, QueryCommand } from "@aws-sdk/client-dynamodb";
 import { unmarshall } from "@aws-sdk/util-dynamodb";
+import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 
 // ---- Config ----------------------------------------------------------------
 
 const TABLE = process.env.DYNAMODB_TABLE ?? "forever-diary";
 const REGION = process.env.AWS_REGION ?? "ap-southeast-1";
+const BUCKET = process.env.S3_BUCKET ?? "forever-diary-photos-800759";
 
 // ---- DynamoDB client -------------------------------------------------------
 
@@ -119,6 +121,37 @@ async function queryPhotos(userId: string): Promise<Map<string, number>> {
   return countMap;
 }
 
+async function fetchPhotoThumbnails(
+  userId: string,
+  monthDayKey: string,
+  year: number,
+): Promise<{ data: string; mimeType: string }[]> {
+  const items = await queryByPrefix(userId, "photo#");
+  const matched = items.filter(
+    (item) => item.entryMonthDayKey === monthDayKey && Number(item.entryYear) === year,
+  );
+
+  const s3 = new S3Client({ region: REGION });
+  const results: { data: string; mimeType: string }[] = [];
+
+  for (const item of matched) {
+    const thumbKey = (item.s3ThumbKey as string) || (item.s3Key as string);
+    if (!thumbKey) continue;
+
+    const fullKey = thumbKey.startsWith(`${userId}/`) ? thumbKey : `${userId}/${thumbKey}`;
+    const response = await s3.send(
+      new GetObjectCommand({ Bucket: BUCKET, Key: fullKey }),
+    );
+    if (!response.Body) continue;
+
+    const bytes = await response.Body.transformToByteArray();
+    const base64 = Buffer.from(bytes).toString("base64");
+    results.push({ data: base64, mimeType: "image/jpeg" });
+  }
+
+  return results;
+}
+
 function attachCheckInsAndPhotos(
   entries: DiaryEntry[],
   checkInItems: Record<string, unknown>[],
@@ -215,6 +248,17 @@ export function createServer(): Server {
         inputSchema: { type: "object" as const, properties: {}, required: [] },
       },
       {
+        name: "get_entry_photos",
+        description: "Get photo thumbnails attached to a diary entry for a specific date (YYYY-MM-DD). Returns images that can be viewed directly.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            date: { type: "string", description: "Date in YYYY-MM-DD format" },
+          },
+          required: ["date"],
+        },
+      },
+      {
         name: "get_recent_entries",
         description: "Get the most recent diary entries.",
         inputSchema: {
@@ -251,6 +295,22 @@ export function createServer(): Server {
         const entries = await queryEntries(userId, `entry#${today}#`);
         const header = entries.length > 0 ? `All entries for ${today} across years:\n\n` : "";
         return { content: [{ type: "text" as const, text: header + entriesToText(entries) }] };
+      }
+
+      if (name === "get_entry_photos") {
+        const { date } = args as { date: string };
+        const { monthDay, year } = parseDate(date);
+        const photos = await fetchPhotoThumbnails(userId, monthDay, Number(year));
+        if (photos.length === 0) {
+          return { content: [{ type: "text" as const, text: `No photos found for ${date}.` }] };
+        }
+        const content: ({ type: "text"; text: string } | { type: "image"; data: string; mimeType: string })[] = [
+          { type: "text" as const, text: `${photos.length} photo${photos.length > 1 ? "s" : ""} from ${date}:` },
+        ];
+        for (const photo of photos) {
+          content.push({ type: "image" as const, data: photo.data, mimeType: photo.mimeType });
+        }
+        return { content };
       }
 
       if (name === "get_recent_entries") {
