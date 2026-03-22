@@ -5,17 +5,24 @@
 
 | # | Step | Status | Notes |
 |---|------|--------|-------|
-| 1 | /brainstorm | done | offload dictation: local server API + engine selector dropdown + whisper-small fallback |
-| 2 | /frontend-design | done | engine pill + menu dropdown on recording view, segmented 3-option picker + server URL + connection test in settings |
-| 3 | /write-plan | done | 27 steps, 9 phases — enum, server transcription, engine dispatch, settings iOS+macOS, recording view, error handling, build |
-| 4 | /execute-plan | done | all 27 steps complete, iOS+macOS build, 179/179 tests pass |
-| 5 | /commit | done | 7f3f881 |
-| 6 | /write-tests | done | 16 new tests, 195/195 pass |
-| 7 | /commit | done | b32e891, d686bda, 0223b96 |
-| 8 | /debug | skipped | bugs fixed during testing (endpoint, connectivity, language) |
-| 9 | /security-check | done | clean on attempt 2 — M2+L3 fixed, all 0 |
-| 10 | /commit | done | 2698ddb, 3542e18 |
-| 11 | /review | done | 2 doc nitpicks on attempt 2, fixed + committed 9ec2a57 |
-| 12 | /commit | done | 9ec2a57 |
-| 13 | /finish-feature | done | PR #9 |
-| 14 | /release | skipped | user opted to skip |
+| 1 | Read Todo | done | picked vim mode + zoom + decimal check-ins task |
+| 2 | Read Lessons | done | 3 active lessons applied as constraints |
+| 3 | /brainstorm | done | 3 features scoped: full vim mode (NSTextView), zoom (AppStorage scale), decimal fix (format precision) |
+| 4 | /frontend-design | skipped | user opted to skip — standard macOS patterns, no custom UI design needed |
+| 5 | /write-plan | done | 17 tasks, 7 waves, 3 milestones: decimal fix, zoom, vim mode |
+| 6 | /branch | >> next << | |
+| 7 | /schema-migrate | not yet | |
+| 8 | /write-tests | not yet | |
+| 9 | /execute-plan | not yet | |
+| 10 | /smart-commit | not yet | |
+| 11 | /lint | not yet | |
+| 12 | /smart-commit | not yet | |
+| 13 | /test | not yet | |
+| 14 | /smart-commit | not yet | |
+| 15 | /security-check | not yet | |
+| 16 | /smart-commit | not yet | |
+| 17 | /review | not yet | |
+| 18 | /smart-commit | not yet | |
+| 19 | /update-task | not yet | |
+| 20 | /finish-feature | not yet | |
+| 21 | /release | not yet | |
