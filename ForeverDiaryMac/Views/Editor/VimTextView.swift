@@ -92,8 +92,9 @@ struct VimTextView: NSViewRepresentable {
         }
 
         func updateCursorStyle(textView: VimNSTextView, mode: VimMode) {
-            textView.useBlockCursor = (mode == .normal || mode == .visual || mode == .visualLine)
-            textView.needsDisplay = true
+            let isBlock = (mode == .normal || mode == .visual || mode == .visualLine)
+            textView.useBlockCursor = isBlock
+            textView.updateBlockCursorPosition()
         }
     }
 }
@@ -105,6 +106,80 @@ class VimNSTextView: NSTextView {
     weak var coordinator: VimTextView.Coordinator?
     var useBlockCursor = false
     var currentFontScale: Double = 1.0
+
+    private lazy var blockCursorLayer: CALayer = {
+        let layer = CALayer()
+        layer.backgroundColor = (NSColor(named: "accentBright") ?? .controlAccentColor).withAlphaComponent(0.45).cgColor
+        layer.isHidden = true
+        return layer
+    }()
+
+    private var cursorUpdateObserver: Any?
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        wantsLayer = true
+        layer?.addSublayer(blockCursorLayer)
+
+        cursorUpdateObserver = NotificationCenter.default.addObserver(
+            forName: NSTextView.didChangeSelectionNotification,
+            object: self,
+            queue: .main
+        ) { [weak self] _ in
+            self?.updateBlockCursorPosition()
+        }
+    }
+
+    deinit {
+        if let obs = cursorUpdateObserver {
+            NotificationCenter.default.removeObserver(obs)
+        }
+    }
+
+    func updateBlockCursorPosition() {
+        guard useBlockCursor,
+              let layoutManager = layoutManager,
+              let textContainer = textContainer else {
+            blockCursorLayer.isHidden = true
+            return
+        }
+
+        let loc = selectedRange().location
+        let hasSelection = selectedRange().length > 0
+
+        if hasSelection {
+            blockCursorLayer.isHidden = true
+            return
+        }
+
+        blockCursorLayer.isHidden = false
+
+        let glyphIndex: Int
+        if loc < layoutManager.numberOfGlyphs {
+            glyphIndex = layoutManager.glyphIndexForCharacter(at: loc)
+        } else if layoutManager.numberOfGlyphs > 0 {
+            glyphIndex = layoutManager.numberOfGlyphs - 1
+        } else {
+            // Empty document — place at origin
+            let origin = textContainerOrigin
+            blockCursorLayer.frame = NSRect(x: origin.x, y: origin.y, width: 8, height: font?.pointSize ?? 17)
+            return
+        }
+
+        var charRect = layoutManager.boundingRect(forGlyphRange: NSRange(location: glyphIndex, length: 1), in: textContainer)
+        let origin = textContainerOrigin
+        charRect.origin.x += origin.x
+        charRect.origin.y += origin.y
+
+        if charRect.width < 2 {
+            charRect.size.width = max(8, (font?.pointSize ?? 17) * 0.6)
+        }
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        blockCursorLayer.frame = charRect
+        CATransaction.commit()
+    }
 
     override func keyDown(with event: NSEvent) {
         guard let engine = vimEngine else {
@@ -544,19 +619,6 @@ class VimNSTextView: NSTextView {
         guard let last = vimEngine?.lastEdit else { return }
         for _ in 0..<max(1, last.count) {
             handleAction(last.action)
-        }
-    }
-
-    // MARK: - Block Cursor Drawing
-
-    override func drawInsertionPoint(in rect: NSRect, color: NSColor, turnedOn flag: Bool) {
-        if useBlockCursor {
-            var blockRect = rect
-            blockRect.size.width = max(8, rect.height * 0.6)
-            color.withAlphaComponent(0.4).setFill()
-            NSBezierPath(rect: blockRect).fill()
-        } else {
-            super.drawInsertionPoint(in: rect, color: color, turnedOn: flag)
         }
     }
 
