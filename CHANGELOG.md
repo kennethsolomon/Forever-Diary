@@ -9,6 +9,14 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ## [Unreleased]
 
 ### Added
+- Vim mode for macOS diary editor — full modal editing with Normal/Insert/Visual modes, hjkl motions, operators (dd/yy/cc/dw/ciw), search (/pattern, n/N), visual selection, block cursor, and status bar. Toggle in Settings > Appearance.
+- Zoom controls for macOS — Cmd+/Cmd-/Cmd+0 keyboard shortcuts and Settings slider (75%-200%), scales diary text and editor headers via custom EnvironmentKey
+- 50 new VimEngine XCTest cases covering all modes, motions, operators, search, and visual mode (now 247 total)
+
+### Fixed
+- Check-in number fields now accept decimal values (e.g., 5.5 for sleep hours) on both iOS and macOS — changed format precision to allow 0-2 decimal places
+
+### Added
 - Voice dictation with tri-engine speech-to-text: Local Server (whisper.cpp, primary), WhisperKit small (on-device fallback), and Apple Speech (streaming) — user selects engine explicitly, no automatic fallback
 - Local whisper.cpp server engine: send recordings to a Mac running whisper-server over local network for fast transcription with large models (e.g., large-v3-turbo)
 - Server connection testing with whisper.cpp identity validation (checks Server response header)
