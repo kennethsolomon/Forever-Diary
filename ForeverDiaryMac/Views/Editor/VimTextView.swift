@@ -164,7 +164,8 @@ class VimNSTextView: NSTextView {
         case .changeMode(let mode):
             coordinator?.updateCursorStyle(textView: self, mode: mode)
         case .moveCursor(let motion):
-            performMotion(motion)
+            let extending = vimEngine?.currentMode == .visual || vimEngine?.currentMode == .visualLine
+            performMotion(motion, extendSelection: extending)
         case .deleteChar:
             deleteForward(nil)
         case .deleteLine:
@@ -257,21 +258,39 @@ class VimNSTextView: NSTextView {
         }
     }
 
-    private func performMotion(_ motion: CursorMotion) {
-        switch motion {
-        case .left: moveLeft(nil)
-        case .right: moveRight(nil)
-        case .up: moveUp(nil)
-        case .down: moveDown(nil)
-        case .wordForward: moveWordForward(nil)
-        case .wordBackward: moveWordBackward(nil)
-        case .wordEnd: moveWordForward(nil) // Approximate
-        case .lineStart: moveToBeginningOfLine(nil)
-        case .lineEnd: moveToEndOfLine(nil)
-        case .documentStart: moveToBeginningOfDocument(nil)
-        case .documentEnd: moveToEndOfDocument(nil)
-        case .paragraphUp: moveToBeginningOfParagraph(nil)
-        case .paragraphDown: moveToEndOfParagraph(nil)
+    private func performMotion(_ motion: CursorMotion, extendSelection: Bool = false) {
+        if extendSelection {
+            switch motion {
+            case .left: moveLeftAndModifySelection(nil)
+            case .right: moveRightAndModifySelection(nil)
+            case .up: moveUpAndModifySelection(nil)
+            case .down: moveDownAndModifySelection(nil)
+            case .wordForward: moveWordForwardAndModifySelection(nil)
+            case .wordBackward: moveWordBackwardAndModifySelection(nil)
+            case .wordEnd: moveWordForwardAndModifySelection(nil)
+            case .lineStart: moveToBeginningOfLineAndModifySelection(nil)
+            case .lineEnd: moveToEndOfLineAndModifySelection(nil)
+            case .documentStart: moveToBeginningOfDocumentAndModifySelection(nil)
+            case .documentEnd: moveToEndOfDocumentAndModifySelection(nil)
+            case .paragraphUp: moveToBeginningOfParagraphAndModifySelection(nil)
+            case .paragraphDown: moveToEndOfParagraphAndModifySelection(nil)
+            }
+        } else {
+            switch motion {
+            case .left: moveLeft(nil)
+            case .right: moveRight(nil)
+            case .up: moveUp(nil)
+            case .down: moveDown(nil)
+            case .wordForward: moveWordForward(nil)
+            case .wordBackward: moveWordBackward(nil)
+            case .wordEnd: moveWordForward(nil)
+            case .lineStart: moveToBeginningOfLine(nil)
+            case .lineEnd: moveToEndOfLine(nil)
+            case .documentStart: moveToBeginningOfDocument(nil)
+            case .documentEnd: moveToEndOfDocument(nil)
+            case .paragraphUp: moveToBeginningOfParagraph(nil)
+            case .paragraphDown: moveToEndOfParagraph(nil)
+            }
         }
     }
 
