@@ -1,5 +1,15 @@
 # Progress Log
 
+### 2026-03-23 Vim Mode + Zoom + Decimal Check-Ins — COMPLETED
+- Branch: `feature/vim-zoom-decimal-checkins`
+- Changes: Full vim mode (VimEngine state machine + NSTextView wrapper + status bar), zoom controls (Cmd+/-/0 + Settings slider with 0.75x-2.0x range), decimal check-in fix (format precision on all 3 number TextFields)
+- Tests: 247/247 pass (50 new VimEngine tests)
+- Files changed: 10 source files + 1 test file
+- Security: 0 findings
+- Review: 0 findings after simplify pre-pass (extracted motionForKey DRY helper, diaryFont helper)
+
+---
+
 ## Session: 2026-03-23 — Vim Mode + Zoom + Decimal Check-Ins
 
 ### Work Log

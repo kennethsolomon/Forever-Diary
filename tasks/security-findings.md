@@ -958,3 +958,44 @@ _None found._
 | Medium   | 0 |
 | Low      | 0 |
 | **Total** | **0** |
+
+---
+
+# Security Audit — 2026-03-23 (Vim Mode + Zoom + Decimal Check-Ins)
+
+**Scope:** Changed files on branch `feature/vim-zoom-decimal-checkins`
+**Stack:** Swift 5.9 / SwiftUI (iOS 17+ / macOS 14+)
+**Files audited:** 10 (VimEngine.swift, VimTextView.swift, VimStatusBar.swift, FontScaleEnvironment.swift, ForeverDiaryMacApp.swift, EntryEditorView.swift, SettingsMacView.swift, CheckInSectionView.swift, EntryDetailView.swift, VimEngineTests.swift)
+
+## Critical (must fix before deploy)
+
+_None found._
+
+## High (fix before production)
+
+_None found._
+
+## Medium (should fix)
+
+_None found._
+
+## Low / Informational
+
+_None found._
+
+## Passed Checks
+
+- OWASP A01-A10 — no new auth, network, injection, or data surfaces
+- PII/Data Protection — diary text uses existing save path, no new data collection
+- Input Validation — decimal precision validates via SwiftUI TextField format; font scale clamped 0.75-2.0
+- VimEngine — pure state machine, no I/O, no network; processes key strings into typed enums only
+
+## Summary
+
+| Severity | Count |
+|----------|-------|
+| Critical | 0 |
+| High     | 0 |
+| Medium   | 0 |
+| Low      | 0 |
+| **Total** | **0** |
