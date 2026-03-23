@@ -28,6 +28,10 @@ final class VimEngineTests: XCTestCase {
         XCTAssertEqual(engine.searchQuery, "")
     }
 
+    func testInitialCountPrefixIsZero() {
+        XCTAssertEqual(engine.countPrefix, 0)
+    }
+
     // MARK: - Mode Transitions
 
     func testIEntersInsertMode() {
@@ -55,14 +59,13 @@ final class VimEngineTests: XCTestCase {
                 return false
             }))
         } else if case .changeMode(.insert) = action {
-            // Also acceptable
         } else {
             XCTFail("Expected insert mode entry, got \(action)")
         }
     }
 
     func testShiftIEntersInsertModeAtStartOfLine() {
-        let action = engine.processKey("I", modifiers: [])
+        _ = engine.processKey("I", modifiers: [])
         XCTAssertEqual(engine.currentMode, .insert)
     }
 
@@ -112,8 +115,17 @@ final class VimEngineTests: XCTestCase {
     func testShiftVEntersVisualLineMode() {
         let action = engine.processKey("V", modifiers: [])
         XCTAssertEqual(engine.currentMode, .visualLine)
-        if case .changeMode(.visualLine) = action {} else {
-            XCTFail("Expected changeMode(.visualLine), got \(action)")
+        if case .compositeAction(let actions) = action {
+            XCTAssertTrue(actions.contains(where: {
+                if case .changeMode(.visualLine) = $0 { return true }
+                return false
+            }))
+            XCTAssertTrue(actions.contains(where: {
+                if case .selectCurrentLine = $0 { return true }
+                return false
+            }))
+        } else {
+            XCTFail("Expected compositeAction with changeMode(.visualLine) + selectCurrentLine, got \(action)")
         }
     }
 
@@ -121,7 +133,7 @@ final class VimEngineTests: XCTestCase {
         _ = engine.processKey("v", modifiers: [])
         XCTAssertEqual(engine.currentMode, .visual)
 
-        let action = engine.processKey("escape", modifiers: [])
+        _ = engine.processKey("escape", modifiers: [])
         XCTAssertEqual(engine.currentMode, .normal)
     }
 
@@ -225,6 +237,13 @@ final class VimEngineTests: XCTestCase {
         }
     }
 
+    func testPercentReturnsMatchBracket() {
+        let action = engine.processKey("%", modifiers: [])
+        if case .moveCursor(.matchBracket) = action {} else {
+            XCTFail("Expected moveCursor(.matchBracket), got \(action)")
+        }
+    }
+
     // MARK: - Single-Key Edits
 
     func testXReturnsDeleteChar() {
@@ -262,18 +281,155 @@ final class VimEngineTests: XCTestCase {
         }
     }
 
+    // MARK: - Shortcuts (D, C, Y)
+
+    func testShiftDReturnsDeleteToLineEnd() {
+        let action = engine.processKey("D", modifiers: [])
+        if case .deleteMotion(.lineEnd) = action {} else {
+            XCTFail("Expected deleteMotion(.lineEnd), got \(action)")
+        }
+    }
+
+    func testShiftCReturnsChangeToLineEnd() {
+        let action = engine.processKey("C", modifiers: [])
+        XCTAssertEqual(engine.currentMode, .insert)
+        if case .changeMotion(.lineEnd) = action {} else {
+            XCTFail("Expected changeMotion(.lineEnd), got \(action)")
+        }
+    }
+
+    func testShiftYReturnsYankLine() {
+        let action = engine.processKey("Y", modifiers: [])
+        if case .yankLine = action {} else {
+            XCTFail("Expected yankLine, got \(action)")
+        }
+    }
+
+    // MARK: - Line Operations
+
+    func testShiftJReturnsJoinLines() {
+        let action = engine.processKey("J", modifiers: [])
+        if case .joinLines = action {} else {
+            XCTFail("Expected joinLines, got \(action)")
+        }
+    }
+
+    func testTildeReturnsToggleCase() {
+        let action = engine.processKey("~", modifiers: [])
+        if case .toggleCase = action {} else {
+            XCTFail("Expected toggleCase, got \(action)")
+        }
+    }
+
+    // MARK: - Indent/Outdent
+
+    func testDoubleGreaterThanReturnsIndentLine() {
+        _ = engine.processKey(">", modifiers: [])
+        XCTAssertEqual(engine.pendingCommand, ">")
+        let action = engine.processKey(">", modifiers: [])
+        if case .indentLine = action {} else {
+            XCTFail("Expected indentLine, got \(action)")
+        }
+    }
+
+    func testDoubleLessThanReturnsOutdentLine() {
+        _ = engine.processKey("<", modifiers: [])
+        XCTAssertEqual(engine.pendingCommand, "<")
+        let action = engine.processKey("<", modifiers: [])
+        if case .outdentLine = action {} else {
+            XCTFail("Expected outdentLine, got \(action)")
+        }
+    }
+
+    // MARK: - Replace Char
+
+    func testRFollowedByCharReturnsReplaceChar() {
+        _ = engine.processKey("r", modifiers: [])
+        XCTAssertEqual(engine.pendingCommand, "r")
+        let action = engine.processKey("x", modifiers: [])
+        if case .replaceChar(let c) = action {
+            XCTAssertEqual(c, Character("x"))
+        } else {
+            XCTFail("Expected replaceChar(x), got \(action)")
+        }
+    }
+
+    // MARK: - Find/Till Char
+
+    func testFFollowedByCharReturnsFindChar() {
+        _ = engine.processKey("f", modifiers: [])
+        XCTAssertEqual(engine.pendingCommand, "f")
+        let action = engine.processKey("a", modifiers: [])
+        if case .moveCursor(.findChar(let c, let forward)) = action {
+            XCTAssertEqual(c, Character("a"))
+            XCTAssertTrue(forward)
+        } else {
+            XCTFail("Expected moveCursor(.findChar(a, forward: true)), got \(action)")
+        }
+    }
+
+    func testShiftFFollowedByCharReturnsFindCharBackward() {
+        _ = engine.processKey("F", modifiers: [])
+        let action = engine.processKey("z", modifiers: [])
+        if case .moveCursor(.findChar(let c, let forward)) = action {
+            XCTAssertEqual(c, Character("z"))
+            XCTAssertFalse(forward)
+        } else {
+            XCTFail("Expected moveCursor(.findChar(z, forward: false)), got \(action)")
+        }
+    }
+
+    func testTFollowedByCharReturnsTillChar() {
+        _ = engine.processKey("t", modifiers: [])
+        let action = engine.processKey("b", modifiers: [])
+        if case .moveCursor(.tillChar(let c, let forward)) = action {
+            XCTAssertEqual(c, Character("b"))
+            XCTAssertTrue(forward)
+        } else {
+            XCTFail("Expected moveCursor(.tillChar(b, forward: true)), got \(action)")
+        }
+    }
+
+    func testShiftTFollowedByCharReturnsTillCharBackward() {
+        _ = engine.processKey("T", modifiers: [])
+        let action = engine.processKey("c", modifiers: [])
+        if case .moveCursor(.tillChar(let c, let forward)) = action {
+            XCTAssertEqual(c, Character("c"))
+            XCTAssertFalse(forward)
+        } else {
+            XCTFail("Expected moveCursor(.tillChar(c, forward: false)), got \(action)")
+        }
+    }
+
+    // MARK: - Search Word Under Cursor
+
+    func testStarReturnsSearchWordForward() {
+        let action = engine.processKey("*", modifiers: [])
+        if case .searchWordUnderCursor(let forward) = action {
+            XCTAssertTrue(forward)
+        } else {
+            XCTFail("Expected searchWordUnderCursor(forward: true), got \(action)")
+        }
+    }
+
+    func testHashReturnsSearchWordBackward() {
+        let action = engine.processKey("#", modifiers: [])
+        if case .searchWordUnderCursor(let forward) = action {
+            XCTAssertFalse(forward)
+        } else {
+            XCTFail("Expected searchWordUnderCursor(forward: false), got \(action)")
+        }
+    }
+
     // MARK: - Operator + Motion Composition
 
     func testDDReturnsDeleteLine() {
-        let action1 = engine.processKey("d", modifiers: [])
-        if case .noop = action1 {} else {
-            XCTFail("Expected noop for first d, got \(action1)")
-        }
+        _ = engine.processKey("d", modifiers: [])
         XCTAssertEqual(engine.pendingCommand, "d")
 
-        let action2 = engine.processKey("d", modifiers: [])
-        if case .deleteLine = action2 {} else {
-            XCTFail("Expected deleteLine, got \(action2)")
+        let action = engine.processKey("d", modifiers: [])
+        if case .deleteLine = action {} else {
+            XCTFail("Expected deleteLine, got \(action)")
         }
         XCTAssertEqual(engine.pendingCommand, "")
     }
@@ -332,6 +488,31 @@ final class VimEngineTests: XCTestCase {
         let action = engine.processKey("w", modifiers: [])
         if case .changeInnerWord = action {} else {
             XCTFail("Expected changeInnerWord, got \(action)")
+        }
+        XCTAssertEqual(engine.currentMode, .insert)
+    }
+
+    func testYWReturnsYankWord() {
+        _ = engine.processKey("y", modifiers: [])
+        let action = engine.processKey("w", modifiers: [])
+        if case .yankMotion(.wordForward) = action {} else {
+            XCTFail("Expected yankMotion(.wordForward), got \(action)")
+        }
+    }
+
+    func testDEReturnsDeleteWordEnd() {
+        _ = engine.processKey("d", modifiers: [])
+        let action = engine.processKey("e", modifiers: [])
+        if case .deleteMotion(.wordEnd) = action {} else {
+            XCTFail("Expected deleteMotion(.wordEnd), got \(action)")
+        }
+    }
+
+    func testCEReturnsChangeWordEnd() {
+        _ = engine.processKey("c", modifiers: [])
+        let action = engine.processKey("e", modifiers: [])
+        if case .changeMotion(.wordEnd) = action {} else {
+            XCTFail("Expected changeMotion(.wordEnd), got \(action)")
         }
         XCTAssertEqual(engine.currentMode, .insert)
     }
@@ -403,6 +584,33 @@ final class VimEngineTests: XCTestCase {
         XCTAssertEqual(engine.currentMode, .normal)
     }
 
+    func testCInVisualModeReturnsChangeSelection() {
+        _ = engine.processKey("v", modifiers: [])
+        let action = engine.processKey("c", modifiers: [])
+        if case .changeSelection = action {} else {
+            XCTFail("Expected changeSelection, got \(action)")
+        }
+        XCTAssertEqual(engine.currentMode, .insert)
+    }
+
+    func testIndentInVisualMode() {
+        _ = engine.processKey("v", modifiers: [])
+        let action = engine.processKey(">", modifiers: [])
+        if case .indentLine = action {} else {
+            XCTFail("Expected indentLine, got \(action)")
+        }
+        XCTAssertEqual(engine.currentMode, .normal)
+    }
+
+    func testOutdentInVisualMode() {
+        _ = engine.processKey("v", modifiers: [])
+        let action = engine.processKey("<", modifiers: [])
+        if case .outdentLine = action {} else {
+            XCTFail("Expected outdentLine, got \(action)")
+        }
+        XCTAssertEqual(engine.currentMode, .normal)
+    }
+
     // MARK: - Insert Mode Passthrough
 
     func testKeysInInsertModeReturnInsertText() {
@@ -434,7 +642,88 @@ final class VimEngineTests: XCTestCase {
         if case .moveCursor(.wordForward) = action {} else {
             XCTFail("Expected moveCursor(.wordForward) in visual mode, got \(action)")
         }
-        // Should stay in visual mode
         XCTAssertEqual(engine.currentMode, .visual)
+    }
+
+    // MARK: - Count Prefix
+
+    func testCountPrefixWithMotion() {
+        _ = engine.processKey("3", modifiers: [])
+        XCTAssertEqual(engine.countPrefix, 3)
+
+        let action = engine.processKey("j", modifiers: [])
+        if case .compositeAction(let actions) = action {
+            XCTAssertEqual(actions.count, 3)
+            for a in actions {
+                if case .moveCursor(.down) = a {} else {
+                    XCTFail("Expected moveCursor(.down)")
+                }
+            }
+        } else {
+            XCTFail("Expected compositeAction with 3 moves, got \(action)")
+        }
+        XCTAssertEqual(engine.countPrefix, 0)
+    }
+
+    func testMultiDigitCountPrefix() {
+        _ = engine.processKey("1", modifiers: [])
+        _ = engine.processKey("2", modifiers: [])
+        XCTAssertEqual(engine.countPrefix, 12)
+
+        let action = engine.processKey("l", modifiers: [])
+        if case .compositeAction(let actions) = action {
+            XCTAssertEqual(actions.count, 12)
+        } else {
+            XCTFail("Expected compositeAction with 12 moves, got \(action)")
+        }
+    }
+
+    func testZeroWithoutCountIsLineStart() {
+        let action = engine.processKey("0", modifiers: [])
+        if case .moveCursor(.lineStart) = action {} else {
+            XCTFail("Expected moveCursor(.lineStart), got \(action)")
+        }
+    }
+
+    func testZeroAfterDigitContinuesCount() {
+        _ = engine.processKey("1", modifiers: [])
+        _ = engine.processKey("0", modifiers: [])
+        XCTAssertEqual(engine.countPrefix, 10)
+    }
+
+    func testEscapeResetsCountPrefix() {
+        _ = engine.processKey("5", modifiers: [])
+        XCTAssertEqual(engine.countPrefix, 5)
+        _ = engine.processKey("escape", modifiers: [])
+        XCTAssertEqual(engine.countPrefix, 0)
+    }
+
+    // MARK: - Dot Repeat
+
+    func testDotReturnsRepeatLastChange() {
+        let action = engine.processKey(".", modifiers: [])
+        if case .repeatLastChange = action {} else {
+            XCTFail("Expected repeatLastChange, got \(action)")
+        }
+    }
+
+    func testLastEditRecordedForDeleteLine() {
+        _ = engine.processKey("d", modifiers: [])
+        _ = engine.processKey("d", modifiers: [])
+        XCTAssertNotNil(engine.lastEdit)
+        if case .deleteLine = engine.lastEdit?.action {} else {
+            XCTFail("Expected lastEdit to be deleteLine")
+        }
+    }
+
+    func testLastEditRecordedForReplaceChar() {
+        _ = engine.processKey("r", modifiers: [])
+        _ = engine.processKey("z", modifiers: [])
+        XCTAssertNotNil(engine.lastEdit)
+        if case .replaceChar(let c) = engine.lastEdit?.action {
+            XCTAssertEqual(c, Character("z"))
+        } else {
+            XCTFail("Expected lastEdit to be replaceChar(z)")
+        }
     }
 }

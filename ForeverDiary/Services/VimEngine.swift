@@ -26,6 +26,9 @@ enum CursorMotion: Equatable {
     case lineStart, lineEnd
     case documentStart, documentEnd
     case paragraphUp, paragraphDown
+    case findChar(Character, forward: Bool)
+    case tillChar(Character, forward: Bool)
+    case matchBracket
 }
 
 // MARK: - Vim Action
@@ -47,10 +50,14 @@ enum VimAction: Equatable {
     case deleteLine
     case yankLine
     case changeLine
+    case joinLines
+    case indentLine
+    case outdentLine
 
     // Operator + motion
     case deleteMotion(CursorMotion)
     case changeMotion(CursorMotion)
+    case yankMotion(CursorMotion)
 
     // Inner word
     case deleteInnerWord
@@ -60,17 +67,34 @@ enum VimAction: Equatable {
     case openLineBelow
     case openLineAbove
 
+    // Character operations
+    case replaceChar(Character)
+    case toggleCase
+
     // Search
     case enterSearch
     case nextMatch
     case prevMatch
+    case searchWordUnderCursor(forward: Bool)
 
     // Visual mode
     case deleteSelection
     case yankSelection
+    case changeSelection
+    case selectCurrentLine
+
+    // Repeat
+    case repeatLastChange
 
     // Composite
     case compositeAction([VimAction])
+}
+
+// MARK: - Recorded Edit (for dot repeat)
+
+struct RecordedEdit: Equatable {
+    let action: VimAction
+    let count: Int
 }
 
 // MARK: - Vim Engine
@@ -81,10 +105,13 @@ final class VimEngine {
     var pendingCommand: String = ""
     var register: String = ""
     var searchQuery: String = ""
+    var countPrefix: Int = 0
+    var lastEdit: RecordedEdit?
 
     func processKey(_ key: String, modifiers: ModifierFlags) -> VimAction {
         // Escape always cancels pending or returns to normal
         if key == "escape" {
+            countPrefix = 0
             if !pendingCommand.isEmpty {
                 pendingCommand = ""
                 return .noop
@@ -112,7 +139,7 @@ final class VimEngine {
         return .insertChar(key)
     }
 
-    // MARK: - Normal Mode
+    // MARK: - Shared Motions
 
     private func motionForKey(_ key: String) -> VimAction? {
         switch key {
@@ -128,9 +155,12 @@ final class VimEngine {
         case "G": return .moveCursor(.documentEnd)
         case "{": return .moveCursor(.paragraphUp)
         case "}": return .moveCursor(.paragraphDown)
+        case "%": return .moveCursor(.matchBracket)
         default: return nil
         }
     }
+
+    // MARK: - Normal Mode
 
     private func processNormalMode(_ key: String, modifiers: ModifierFlags) -> VimAction {
         // Ctrl+R → redo
@@ -143,13 +173,30 @@ final class VimEngine {
             return processPendingCommand(key)
         }
 
-        // Motions
-        if let motion = motionForKey(key) {
-            return motion
+        // Count prefix (digits 1-9 start, 0 only continues)
+        if let digit = key.first, digit.isNumber {
+            let d = Int(String(digit))!
+            if d != 0 || countPrefix > 0 {
+                countPrefix = countPrefix * 10 + d
+                return .noop
+            }
         }
 
-        // Mode entry keys
+        // Motions (with count)
+        if let motion = motionForKey(key) {
+            let action = applyCount(motion)
+            countPrefix = 0
+            return action
+        }
+
+        let result = processNormalCommand(key, modifiers: modifiers)
+        countPrefix = 0
+        return result
+    }
+
+    private func processNormalCommand(_ key: String, modifiers: ModifierFlags) -> VimAction {
         switch key {
+        // Mode entry
         case "i":
             currentMode = .insert
             return .changeMode(.insert)
@@ -164,30 +211,87 @@ final class VimEngine {
             return .compositeAction([.moveCursor(.lineStart), .changeMode(.insert)])
         case "o":
             currentMode = .insert
-            return .openLineBelow
+            let action = VimAction.openLineBelow
+            lastEdit = RecordedEdit(action: action, count: 1)
+            return action
         case "O":
             currentMode = .insert
-            return .openLineAbove
+            let action = VimAction.openLineAbove
+            lastEdit = RecordedEdit(action: action, count: 1)
+            return action
         case "v":
             currentMode = .visual
             return .changeMode(.visual)
         case "V":
             currentMode = .visualLine
-            return .changeMode(.visualLine)
+            return .compositeAction([.changeMode(.visualLine), .selectCurrentLine])
 
         // Single-key edits
-        case "x": return .deleteChar
-        case "p": return .putAfter
-        case "P": return .putBefore
-        case "u": return .undo
+        case "x":
+            let count = max(1, countPrefix)
+            let action = VimAction.deleteChar
+            lastEdit = RecordedEdit(action: action, count: count)
+            return applyCount(action)
+        case "p":
+            return .putAfter
+        case "P":
+            return .putBefore
+        case "u":
+            return .undo
+
+        // Shortcuts
+        case "D":
+            let action = VimAction.deleteMotion(.lineEnd)
+            lastEdit = RecordedEdit(action: action, count: 1)
+            return action
+        case "C":
+            currentMode = .insert
+            let action = VimAction.changeMotion(.lineEnd)
+            lastEdit = RecordedEdit(action: action, count: 1)
+            return action
+        case "Y":
+            return .yankLine
+
+        // Line operations
+        case "J":
+            let action = VimAction.joinLines
+            lastEdit = RecordedEdit(action: action, count: 1)
+            return action
+
+        // Character operations
+        case "~":
+            let action = VimAction.toggleCase
+            lastEdit = RecordedEdit(action: action, count: 1)
+            return action
 
         // Search
         case "/": return .enterSearch
         case "n": return .nextMatch
         case "N": return .prevMatch
+        case "*": return .searchWordUnderCursor(forward: true)
+        case "#": return .searchWordUnderCursor(forward: false)
+
+        // Repeat
+        case ".":
+            return .repeatLastChange
 
         // Operators (wait for motion)
         case "d", "y", "c", "g":
+            pendingCommand = key
+            return .noop
+
+        // Find/till char (wait for next char)
+        case "f", "F", "t", "T":
+            pendingCommand = key
+            return .noop
+
+        // Replace char (wait for next char)
+        case "r":
+            pendingCommand = "r"
+            return .noop
+
+        // Indent/outdent (wait for second key)
+        case ">", "<":
             pendingCommand = key
             return .noop
 
@@ -201,59 +305,161 @@ final class VimEngine {
     private func processPendingCommand(_ key: String) -> VimAction {
         let full = pendingCommand + key
 
+        // Find/till char commands
+        if pendingCommand.count == 1, let prefix = pendingCommand.first,
+           "fFtT".contains(prefix), let char = key.first {
+            pendingCommand = ""
+            let forward = prefix == "f" || prefix == "t"
+            let till = prefix == "t" || prefix == "T"
+            let motion: CursorMotion = till
+                ? .tillChar(char, forward: forward)
+                : .findChar(char, forward: forward)
+            let action = VimAction.moveCursor(motion)
+            countPrefix = 0
+            return action
+        }
+
+        // Replace char command
+        if pendingCommand == "r", let char = key.first {
+            pendingCommand = ""
+            let action = VimAction.replaceChar(char)
+            lastEdit = RecordedEdit(action: action, count: 1)
+            countPrefix = 0
+            return action
+        }
+
+        // Indent/outdent
+        if full == ">>" {
+            pendingCommand = ""
+            let action = VimAction.indentLine
+            lastEdit = RecordedEdit(action: action, count: 1)
+            countPrefix = 0
+            return action
+        }
+        if full == "<<" {
+            pendingCommand = ""
+            let action = VimAction.outdentLine
+            lastEdit = RecordedEdit(action: action, count: 1)
+            countPrefix = 0
+            return action
+        }
+
         switch full {
         // Double operators
         case "dd":
             pendingCommand = ""
-            return .deleteLine
+            let count = max(1, countPrefix)
+            let action = VimAction.deleteLine
+            lastEdit = RecordedEdit(action: action, count: count)
+            countPrefix = 0
+            return applyCount(action)
         case "yy":
             pendingCommand = ""
+            countPrefix = 0
             return .yankLine
         case "cc":
             pendingCommand = ""
             currentMode = .insert
-            return .changeLine
+            let action = VimAction.changeLine
+            lastEdit = RecordedEdit(action: action, count: 1)
+            countPrefix = 0
+            return action
         case "gg":
             pendingCommand = ""
+            countPrefix = 0
             return .moveCursor(.documentStart)
 
         // Operator + motion
         case "dw":
             pendingCommand = ""
-            return .deleteMotion(.wordForward)
+            let action = VimAction.deleteMotion(.wordForward)
+            lastEdit = RecordedEdit(action: action, count: 1)
+            countPrefix = 0
+            return action
         case "db":
             pendingCommand = ""
-            return .deleteMotion(.wordBackward)
+            let action = VimAction.deleteMotion(.wordBackward)
+            lastEdit = RecordedEdit(action: action, count: 1)
+            countPrefix = 0
+            return action
+        case "de":
+            pendingCommand = ""
+            let action = VimAction.deleteMotion(.wordEnd)
+            lastEdit = RecordedEdit(action: action, count: 1)
+            countPrefix = 0
+            return action
         case "d$":
             pendingCommand = ""
-            return .deleteMotion(.lineEnd)
+            let action = VimAction.deleteMotion(.lineEnd)
+            lastEdit = RecordedEdit(action: action, count: 1)
+            countPrefix = 0
+            return action
         case "d0":
             pendingCommand = ""
-            return .deleteMotion(.lineStart)
+            let action = VimAction.deleteMotion(.lineStart)
+            lastEdit = RecordedEdit(action: action, count: 1)
+            countPrefix = 0
+            return action
         case "cw":
             pendingCommand = ""
             currentMode = .insert
-            return .changeMotion(.wordForward)
+            let action = VimAction.changeMotion(.wordForward)
+            lastEdit = RecordedEdit(action: action, count: 1)
+            countPrefix = 0
+            return action
         case "cb":
             pendingCommand = ""
             currentMode = .insert
-            return .changeMotion(.wordBackward)
+            let action = VimAction.changeMotion(.wordBackward)
+            lastEdit = RecordedEdit(action: action, count: 1)
+            countPrefix = 0
+            return action
+        case "ce":
+            pendingCommand = ""
+            currentMode = .insert
+            let action = VimAction.changeMotion(.wordEnd)
+            lastEdit = RecordedEdit(action: action, count: 1)
+            countPrefix = 0
+            return action
+        case "yw":
+            pendingCommand = ""
+            countPrefix = 0
+            return .yankMotion(.wordForward)
+        case "yb":
+            pendingCommand = ""
+            countPrefix = 0
+            return .yankMotion(.wordBackward)
+        case "y$":
+            pendingCommand = ""
+            countPrefix = 0
+            return .yankMotion(.lineEnd)
 
         // Inner word (di, ci need another key)
-        case "di", "ci":
+        case "di", "ci", "yi":
             pendingCommand = full
             return .noop
         case "diw":
             pendingCommand = ""
-            return .deleteInnerWord
+            let action = VimAction.deleteInnerWord
+            lastEdit = RecordedEdit(action: action, count: 1)
+            countPrefix = 0
+            return action
         case "ciw":
             pendingCommand = ""
             currentMode = .insert
-            return .changeInnerWord
+            let action = VimAction.changeInnerWord
+            lastEdit = RecordedEdit(action: action, count: 1)
+            countPrefix = 0
+            return action
+        case "yiw":
+            pendingCommand = ""
+            countPrefix = 0
+            return .yankMotion(.wordForward)
 
         default:
             // Invalid sequence — cancel
             pendingCommand = ""
+            countPrefix = 0
             return .noop
         }
     }
@@ -273,9 +479,35 @@ final class VimEngine {
         case "y":
             currentMode = .normal
             return .yankSelection
+        case "c":
+            currentMode = .insert
+            return .changeSelection
+        case "J":
+            currentMode = .normal
+            return .joinLines
+        case ">":
+            currentMode = .normal
+            return .indentLine
+        case "<":
+            currentMode = .normal
+            return .outdentLine
+        case "~":
+            currentMode = .normal
+            return .toggleCase
+        case "U":
+            currentMode = .normal
+            return .toggleCase
         default:
             return .noop
         }
+    }
+
+    // MARK: - Count Prefix
+
+    private func applyCount(_ action: VimAction) -> VimAction {
+        let count = max(1, countPrefix)
+        if count == 1 { return action }
+        return .compositeAction(Array(repeating: action, count: count))
     }
 }
 
