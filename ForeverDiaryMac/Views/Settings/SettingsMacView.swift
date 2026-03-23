@@ -97,6 +97,8 @@ private struct AccountTab: View {
 
 private struct AppearanceTab: View {
     @Binding var storedTheme: String
+    @AppStorage("fontScale") private var fontScale: Double = 1.0
+    @AppStorage("vimMode") private var vimMode: Bool = false
 
     var body: some View {
         VStack(spacing: 20) {
@@ -117,6 +119,59 @@ private struct AppearanceTab: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                .frame(maxWidth: 300)
+
+                Divider()
+                    .frame(maxWidth: 300)
+
+                // Zoom
+                VStack(spacing: 8) {
+                    HStack {
+                        Text("Zoom")
+                            .font(.system(.subheadline, design: .rounded))
+                            .foregroundStyle(Color("textPrimary"))
+                        Spacer()
+                        Text("\(Int(fontScale * 100))%")
+                            .font(.system(.subheadline, design: .rounded))
+                            .foregroundStyle(Color("textSecondary"))
+                            .monospacedDigit()
+                        if fontScale != 1.0 {
+                            Button("Reset") {
+                                fontScale = 1.0
+                            }
+                            .font(.system(.caption, design: .rounded))
+                            .foregroundStyle(Color("accentBright"))
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .frame(maxWidth: 300)
+
+                    Slider(value: $fontScale, in: 0.75...2.0, step: 0.05)
+                        .frame(maxWidth: 300)
+
+                    Text("Use Cmd+/Cmd- to zoom, Cmd+0 to reset")
+                        .font(.system(.caption2, design: .rounded))
+                        .foregroundStyle(Color("textSecondary"))
+                }
+
+                Divider()
+                    .frame(maxWidth: 300)
+
+                // Vim Mode
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Vim Mode")
+                            .font(.system(.subheadline, design: .rounded))
+                            .foregroundStyle(Color("textPrimary"))
+                        Text("Use vim keybindings in the diary editor")
+                            .font(.system(.caption, design: .rounded))
+                            .foregroundStyle(Color("textSecondary"))
+                    }
+                    Spacer()
+                    Toggle("", isOn: $vimMode)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
                 .frame(maxWidth: 300)
             }
 

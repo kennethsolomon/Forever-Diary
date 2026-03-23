@@ -1,89 +1,56 @@
-# Offload Dictation Processing — Local Server + Engine Selector
+# Vim Mode + Zoom + Decimal Check-Ins
 
 ## Problem Statement
 
-The `whisper-large-v3-turbo` model (~809MB) causes:
-1. **Excessive processing time** — batch transcription after recording stops takes too long
-2. **Phone overheating** — iPhone 14 Pro Max heats up running the large model on Neural Engine
-3. **Overkill for short recordings** — user's typical recordings are < 10 seconds
+Three macOS app improvements:
+1. **No vim keybindings** — power users want modal editing in the diary text editor
+2. **No zoom controls** — can't scale text/UI size up or down
+3. **Decimal input broken in check-ins** — can't type `5.5` for sleep hours because `format: .number` rejects the `.` character
 
 ## Key Decisions
 
-1. **Add Local Server engine** — OpenAI-compatible API (`POST /v1/audio/transcriptions`) pointing to user's laptop running whisper.cpp server or similar
-2. **Downgrade on-device WhisperKit** from `large-v3-turbo` (~809MB) to `whisper-small` (~244MB) — lighter, less heat, adequate as backup
-3. **Keep Apple Speech** as a third engine option (no Tagalog, but useful for English)
-4. **Explicit engine selection via dropdown** — no automatic fallback chain; user picks which engine to use
-5. **Engine picker in two places** — Settings (default) + Recording view (per-recording override)
-6. **Error handling** — if selected engine fails, show error and let user pick different engine (no silent fallback)
-7. **Configurable server URL** — editable in Settings, default `http://localhost:8080`
+### Feature 1: Full Vim Mode (Large)
 
-## Chosen Approach: Multi-Engine with Explicit Selection
+1. **Wrap NSTextView** — SwiftUI `TextEditor` doesn't expose key events; replace with `NSViewRepresentable` wrapping `NSTextView`
+2. **VimEngine state machine** — separate class handling Normal/Insert/Visual modes, command parsing
+3. **Supported commands (initial set):**
+   - **Modes:** Normal, Insert, Visual (line + char)
+   - **Motion:** `h`, `j`, `k`, `l`, `w`, `b`, `e`, `0`, `$`, `gg`, `G`, `{`, `}`
+   - **Editing:** `i`, `a`, `o`, `O`, `A`, `I`, `x`, `dd`, `yy`, `p`, `P`, `cc`, `ciw`, `cw`, `diw`, `dw`, `u` (undo), `Ctrl+R` (redo)
+   - **Search:** `/pattern`, `n`, `N`
+   - **Visual:** `v`, `V`, `d`, `y` on selection
+   - **Escape** returns to Normal mode
+4. **Vim status bar** — shows mode (`-- NORMAL --`, `-- INSERT --`, `-- VISUAL --`) and pending command
+5. **Toggle in Settings** — "Vim Mode" switch, off by default. When off, standard NSTextView behavior
+6. **macOS only** — iOS keeps standard TextEditor (no hardware keyboard expectation)
 
-### Engine Options
+### Feature 2: Zoom In/Out (Medium)
 
-| Engine | Where it runs | Model | Tagalog? | Needs network? |
-|--------|--------------|-------|----------|----------------|
-| Local Server | User's laptop (whisper.cpp server) | large-v3-turbo (or any) | Yes | Yes (LAN) |
-| WhisperKit | On-device (iPhone) | whisper-small (~244MB) | Yes | No |
-| Apple Speech | On-device (Apple framework) | Apple's built-in | No | No |
+1. **AppStorage scale factor** — `fontScale: Double` stored in `@AppStorage("fontScale")`, default `1.0`
+2. **Keyboard shortcuts** — `Cmd+=` (zoom in), `Cmd+-` (zoom out), `Cmd+0` (reset to 1.0)
+3. **Settings slider** — continuous slider with presets: 75%, 100%, 125%, 150%
+4. **Scale range** — 0.75x to 2.0x in 0.05 increments
+5. **Environment-based** — custom `EnvironmentKey` so all views can read the scale
+6. **Applies to both** — diary text editor font AND UI labels/headers scale proportionally
+7. **macOS only** — iOS uses system Dynamic Type
 
-### API Format (Local Server)
+### Feature 3: Decimal Check-Ins (Small)
 
-OpenAI-compatible endpoint — works with whisper.cpp server, faster-whisper-server, LocalAI, or OpenAI cloud:
+1. **Root cause** — `format: .number` defaults to integer-like formatting, rejecting `.` during live editing
+2. **Fix** — change to `format: .number.precision(.fractionLength(0...2))` allowing 0-2 decimal places
+3. **Both platforms** — fix in `EntryDetailView.swift:274` (iOS) and `CheckInSectionView.swift:63` (macOS)
+4. **No model changes** — `numberValue` is already `Double`
+5. **No sync changes** — DynamoDB already stores numbers as floating point
 
-```
-POST {serverURL}/v1/audio/transcriptions
-Content-Type: multipart/form-data
+## Chosen Approaches
 
-file: <audio.wav>
-model: whisper-1
-language: tl  (or en, ja, etc.)
-```
+| Feature | Approach | Files Affected |
+|---------|----------|---------------|
+| Vim mode | NSTextView wrapper + VimEngine + status bar + Settings toggle | New: `VimTextView.swift`, `VimEngine.swift`, `VimStatusBar.swift`. Modified: `EntryEditorView.swift`, `SettingsMacView.swift` |
+| Zoom | AppStorage scale + Cmd shortcuts + Settings slider + environment key | New: `FontScaleEnvironment.swift`. Modified: `ForeverDiaryMacApp.swift`, `EntryEditorView.swift`, `SettingsMacView.swift`, `MainWindowView.swift`, other Mac views |
+| Decimal check-ins | Change `.number` format precision | Modified: `EntryDetailView.swift`, `CheckInSectionView.swift` |
 
-Response: `{ "text": "transcribed text here" }`
-
-### UI Changes
-
-#### Settings
-- **Default Engine** dropdown: Local Server / WhisperKit / Apple Speech
-- **Server URL** text field (shown when Local Server selected or always visible)
-- **WhisperKit Model** section updated: shows whisper-small (~244MB) instead of large-v3-turbo
-- Keep existing: favorite languages, language picker
-
-#### Recording View
-- **Engine picker** (segmented control or dropdown) — defaults to Settings choice, can override per-recording
-- Keep existing: language quick-switch pills, waveform, timer
-
-### Error Handling
-
-- Local Server unreachable → show error alert: "Server unreachable at {URL}. Switch engine or check server."
-- WhisperKit model not downloaded → show error: "WhisperKit model not downloaded. Download in Settings or switch engine."
-- Apple Speech fails → show error with reason
-- No silent fallback — user always chooses
-
-### Changes Required
-
-#### 1. SpeechService.swift
-- Add `TranscriptionEngine` enum: `.localServer`, `.whisperKit`, `.appleSpeech`
-- Add `transcribeWithLocalServer(url:language:)` — multipart POST to configurable endpoint
-- Change WhisperKit model from `openai_whisper-large-v3_turbo` to `openai_whisper-small`
-- Add `serverURL` property (stored in UserDefaults)
-- Add `selectedEngine` property (stored in UserDefaults)
-- Modify `transcribe()` to dispatch to selected engine, no fallback chain
-- Return errors explicitly instead of silently falling back
-
-#### 2. RecordingView.swift
-- Add engine picker (segmented control or menu) defaulting to Settings choice
-- Show engine-specific status (e.g., "Sending to server..." vs "Processing on device...")
-- Handle engine errors with alert + engine switch option
-
-#### 3. SettingsView.swift
-- Add "Default Engine" picker
-- Add "Server URL" text field
-- Update WhisperKit model info (~244MB whisper-small)
-- Keep favorite languages section
-
-### Constraints (from lessons.md)
+## Constraints (from lessons.md)
 
 - No `@Attribute(.unique)` in SwiftData models
 - Use `ModelContext(container)` in tests, not `container.mainContext`

@@ -271,7 +271,7 @@ struct EntryDetailView: View {
                 TextField("0", value: Binding(
                     get: { value?.numberValue ?? 0 },
                     set: { newVal in updateCheckIn(template: template, number: newVal) }
-                ), format: .number)
+                ), format: .number.precision(.fractionLength(0...2)))
                 .font(.system(.subheadline, design: .rounded))
                 .textFieldStyle(.roundedBorder)
                 .keyboardType(.decimalPad)

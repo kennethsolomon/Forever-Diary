@@ -5,17 +5,24 @@
 
 | # | Step | Status | Notes |
 |---|------|--------|-------|
-| 1 | /brainstorm | done | offload dictation: local server API + engine selector dropdown + whisper-small fallback |
-| 2 | /frontend-design | done | engine pill + menu dropdown on recording view, segmented 3-option picker + server URL + connection test in settings |
-| 3 | /write-plan | done | 27 steps, 9 phases — enum, server transcription, engine dispatch, settings iOS+macOS, recording view, error handling, build |
-| 4 | /execute-plan | done | all 27 steps complete, iOS+macOS build, 179/179 tests pass |
-| 5 | /commit | done | 7f3f881 |
-| 6 | /write-tests | done | 16 new tests, 195/195 pass |
-| 7 | /commit | done | b32e891, d686bda, 0223b96 |
-| 8 | /debug | skipped | bugs fixed during testing (endpoint, connectivity, language) |
-| 9 | /security-check | done | clean on attempt 2 — M2+L3 fixed, all 0 |
-| 10 | /commit | done | 2698ddb, 3542e18 |
-| 11 | /review | done | 2 doc nitpicks on attempt 2, fixed + committed 9ec2a57 |
-| 12 | /commit | done | 9ec2a57 |
-| 13 | /finish-feature | done | PR #9 |
-| 14 | /release | skipped | user opted to skip |
+| 1 | Read Todo | done | picked vim mode + zoom + decimal check-ins task |
+| 2 | Read Lessons | done | 3 active lessons applied as constraints |
+| 3 | /brainstorm | done | 3 features scoped: full vim mode (NSTextView), zoom (AppStorage scale), decimal fix (format precision) |
+| 4 | /frontend-design | skipped | user opted to skip — standard macOS patterns, no custom UI design needed |
+| 5 | /write-plan | done | 17 tasks, 7 waves, 3 milestones: decimal fix, zoom, vim mode |
+| 6 | /branch | done | `feature/vim-zoom-decimal-checkins` from main |
+| 7 | /schema-migrate | skipped | no model/schema changes — numberValue already Double, features are view/UI-only |
+| 8 | /write-tests | done | 45 tests in VimEngineTests.swift, RED phase confirmed (VimEngine not implemented) |
+| 9 | /execute-plan | done | all 17 tasks complete, 247/247 tests pass, iOS + macOS build |
+| 10 | /smart-commit | done | 7dd2a3c — feat(mac): add vim mode, zoom controls, and decimal check-in support |
+| 11 | /lint | done | clean — 0 compiler warnings on iOS + macOS, no SwiftLint installed |
+| 12 | /smart-commit | skipped | lint was clean, no changes needed |
+| 13 | /test | done | 247/247 pass, 0 failures, clean on attempt 1 |
+| 14 | /smart-commit | skipped | tests passed first try, no fixes needed |
+| 15 | /security-check | done | clean — 0 findings across all severities, attempt 1 |
+| 16 | /smart-commit | skipped | security was clean, no fixes needed |
+| 17 | /review | done | clean — simplify pre-pass fixed 2 files (motion DRY, font helper), 0 findings on review |
+| 18 | /smart-commit | skipped | review fixes auto-committed in simplify pre-pass (d55d341) |
+| 19 | /update-task | done | all 17 tasks marked complete, completion logged to progress.md |
+| 20 | /finish-feature | >> next << | |
+| 21 | /release | not yet | |

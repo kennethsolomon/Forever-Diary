@@ -60,7 +60,7 @@ struct CheckInSectionView: View {
                 TextField("0", value: Binding(
                     get: { value?.numberValue ?? 0 },
                     set: { newVal in updateCheckIn(template: template, number: newVal) }
-                ), format: .number)
+                ), format: .number.precision(.fractionLength(0...2)))
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 80)
             }

@@ -9,6 +9,7 @@ struct ForeverDiaryMacApp: App {
     let syncService: SyncService
     let networkMonitor: NetworkMonitor
     let speechService: SpeechService
+    @AppStorage("fontScale") private var fontScale: Double = 1.0
 
     init() {
         let schema = Schema([
@@ -53,6 +54,7 @@ struct ForeverDiaryMacApp: App {
                 .environment(googleAuth)
                 .environment(networkMonitor)
                 .environment(speechService)
+                .environment(\.fontScale, fontScale)
         }
         .modelContainer(container)
         .commands {
@@ -62,6 +64,22 @@ struct ForeverDiaryMacApp: App {
                 }
                 .keyboardShortcut("t", modifiers: .command)
             }
+            CommandGroup(after: .toolbar) {
+                Button("Zoom In") {
+                    fontScale = min(2.0, fontScale + 0.1)
+                }
+                .keyboardShortcut("+", modifiers: .command)
+
+                Button("Zoom Out") {
+                    fontScale = max(0.75, fontScale - 0.1)
+                }
+                .keyboardShortcut("-", modifiers: .command)
+
+                Button("Reset Zoom") {
+                    fontScale = 1.0
+                }
+                .keyboardShortcut("0", modifiers: .command)
+            }
         }
 
         Settings {
@@ -70,6 +88,7 @@ struct ForeverDiaryMacApp: App {
                 .environment(cognitoAuth)
                 .environment(networkMonitor)
                 .environment(speechService)
+                .environment(\.fontScale, fontScale)
                 .modelContainer(container)
         }
     }

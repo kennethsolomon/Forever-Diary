@@ -1,8 +1,8 @@
-# Offload Dictation Processing — Local Server + Engine Selector
+# Vim Mode + Zoom + Decimal Check-Ins
 
 ## Goal
 
-Replace the heavy on-device `large-v3-turbo` model with a multi-engine architecture: configurable local Whisper server (primary), on-device `whisper-small` (fallback), and Apple Speech (option). User explicitly selects engine via dropdown in Settings and Recording view. No automatic fallback — errors shown, user decides.
+Add full vim keybindings to the macOS diary editor, zoom in/out controls (Cmd+/-/0 + Settings slider), and fix decimal input in check-in number fields on both platforms.
 
 ## Constraints (from lessons.md)
 
@@ -12,50 +12,42 @@ Replace the heavy on-device `large-v3-turbo` model with a multi-engine architect
 
 ## Plan
 
-### Phase 1: SpeechEngineType enum update
-- [x] 1. Add `.localServer` case to `SpeechEngineType` with `rawValue: "localserver"`, `displayName: "Local Server"`. Add `shortName` computed property (`"Server"`, `"Whisper"`, `"Apple"`). Add `symbolName` computed property (`"antenna.radiowaves.left.and.right"`, `"cpu"`, `"mic"`).
+### Milestone 1: Decimal Check-In Fix (Small)
 
-### Phase 2: SpeechService — server URL + connection test
-- [x] 2. Add `serverURL` property to `SpeechService` — UserDefaults-backed (`"whisperServerURL"`), default `"http://localhost:8080"`.
-- [x] 3. Add `serverConnectionState` enum (`untested`, `testing`, `connected`, `failed(String)`) and observable property.
-- [x] 4. Add `testServerConnection()` method — `GET {serverURL}/v1/models` with 5-second timeout, updates `serverConnectionState`.
+#### Wave 1 (parallel)
+- [x] 1. Fix iOS decimal input — change `EntryDetailView.swift:274` from `format: .number` to `format: .number.precision(.fractionLength(0...2))`
+- [x] 2. Fix macOS decimal input — change `CheckInSectionView.swift:63` from `format: .number` to `format: .number.precision(.fractionLength(0...2))`
+- [x] 3. Fix macOS EntryEditorView decimal input — change `EntryEditorView.swift:326` from `format: .number` to `format: .number.precision(.fractionLength(0...2))`
 
-### Phase 3: SpeechService — local server transcription
-- [x] 5. Add `transcribeWithLocalServer(url: URL) async -> String` — multipart POST to `{serverURL}/v1/audio/transcriptions` with `file` (WAV data), `model: "whisper-1"`, `language` param. Parse JSON response `{ "text": "..." }`. On error, set `self.error` with descriptive message (server unreachable, timeout, bad response).
-- [x] 6. Apply `cleanTranscription()` to local server results (same noise token stripping).
+### Milestone 2: Zoom Controls (Medium)
 
-### Phase 4: SpeechService — engine dispatch refactor
-- [x] 7. Change WhisperKit model from `"openai_whisper-large-v3_turbo"` to `"openai_whisper-small"` in both `transcribeWithWhisperKit()` and `downloadWhisperModel()`.
-- [x] 8. Update `whisperModelRow` display text from `"large-v3-turbo (~809 MB)"` to `"small (~244 MB)"` in SettingsView and SettingsMacView.
-- [x] 9. Refactor `stopRecording()` — replace fallback logic with single-engine dispatch. Added `stopRecording(using:)` with optional engine override + `retryTranscription(using:)` + `finishSession()` for cleanup.
+#### Wave 2 (parallel)
+- [x] 4. Create `FontScaleEnvironment.swift` in `ForeverDiaryMac/` — define `FontScaleKey` EnvironmentKey with default `1.0`, and `EnvironmentValues` extension for `\.fontScale`
+- [x] 5. Create `ScaledFont` ViewModifier in same file — reads `fontScale` from environment, applies `font(.system(size: baseSize * scale, design: design))`. Add `View.scaledFont(size:design:weight:)` extension.
 
-### Phase 5: Settings UI — iOS
-- [x] 10. Update `speechSection` in SettingsView — segmented picker now has 3 options using `shortName`.
-- [x] 11. Add server URL `TextField` row — shown when engine is `.localServer`.
-- [x] 12. Add connection test row below URL — status dot + text + "Test" button.
-- [x] 13. Update footer text.
+#### Wave 3 (depends on Wave 2)
+- [x] 6. Add `@AppStorage("fontScale") private var fontScale: Double = 1.0` to `ForeverDiaryMacApp.swift` — inject `.environment(\.fontScale, fontScale)` into both `WindowGroup` and `Settings` scenes
+- [x] 7. Add zoom keyboard shortcuts to `ForeverDiaryMacApp.swift` commands — `Cmd+=` (zoom in, +0.1, max 2.0), `Cmd+-` (zoom out, -0.1, min 0.75), `Cmd+0` (reset to 1.0)
+- [x] 8. Apply `fontScale` to `EntryEditorView.swift` text editor — read `@Environment(\.fontScale)`, apply scaled font size to TextEditor and placeholder text
 
-### Phase 6: Settings UI — macOS
-- [x] 14. Update `SpeechTab` in SettingsMacView — segmented picker with 3 options.
-- [x] 15. Add server URL field + connection test to macOS SpeechTab, centered layout.
-- [x] 16. Update model display text to `"small (~244 MB)"`.
-- [x] 17. Update footer text to match iOS.
+#### Wave 4 (depends on Wave 3)
+- [x] 9. Add zoom controls to `SettingsMacView.swift` AppearanceTab — slider (0.75...2.0, step 0.05) with percentage label, reset button. Read/write `@AppStorage("fontScale")`
+- [x] 10. Apply `fontScale` to other macOS views — header text in EntryEditorView (weekday + date)
 
-### Phase 7: Recording View — engine picker
-- [x] 18. Add `@State private var activeEngine: SpeechEngineType?` with `currentEngine` computed property.
-- [x] 19. Add `enginePill` view — capsule with Menu dropdown, SF Symbol + shortName + chevron.
-- [x] 20. Insert `enginePill` as first element in top `HStack`.
-- [x] 21. Update `statusLabel` with engine-specific processing text.
-- [x] 22. Update `stopRecording()` call to use `currentEngine` for per-recording override.
+### Milestone 3: Vim Mode (Large)
 
-### Phase 8: Recording View — error handling
-- [x] 23. Retry button shown when error occurs or result empty. Calls `retryTranscription(using:)`. Engine pill tints red on error. Done button only shown when text available.
+#### Wave 5 (parallel)
+- [x] 11. Create `VimEngine.swift` in `ForeverDiary/Services/` — vim state machine class with VimMode, VimAction, CursorMotion enums and processKey method
+- [x] 12. Create `VimTextView.swift` in `ForeverDiaryMac/Views/Editor/` — NSViewRepresentable wrapping NSTextView with vim key handling
+- [x] 13. Create `VimStatusBar.swift` in `ForeverDiaryMac/Views/Editor/` — mode display + pending command
 
-### Phase 9: Build + verify
-- [x] 24. Run `xcodegen generate` — succeeded.
-- [x] 25. Build iOS (iPhone 16e) — BUILD SUCCEEDED.
-- [x] 26. Build macOS — BUILD SUCCEEDED.
-- [x] 27. Run tests (iPhone 16e) — 179/179 pass (2 new tests for shortName/symbolName).
+#### Wave 6 (depends on Wave 5)
+- [x] 14. Add vim mode toggle to `SettingsMacView.swift` AppearanceTab
+- [x] 15. Integrate vim mode into `EntryEditorView.swift` — conditional VimTextView vs TextEditor
+
+#### Wave 7 (depends on Wave 6)
+- [x] 16. Files auto-included by directory — no project.yml changes needed
+- [x] 17. Build verification — xcodegen, iOS BUILD SUCCEEDED, macOS BUILD SUCCEEDED, 247/247 tests pass
 
 ## Verification Commands
 
@@ -68,12 +60,21 @@ xcodebuild test -scheme ForeverDiary -destination 'platform=iOS Simulator,name=i
 
 ## Acceptance Criteria
 
-1. [x] `SpeechEngineType` has 3 cases: `.localServer`, `.whisperKit`, `.apple`
-2. [x] Settings (iOS + macOS) shows 3-option segmented engine picker
-3. [x] Settings shows server URL text field + connection test when Local Server selected
-4. [x] WhisperKit model is `whisper-small` (~244MB), not `large-v3-turbo`
-5. [x] Recording view has engine pill with Menu dropdown to override engine per-recording
-6. [x] Selecting Local Server sends multipart POST to `{serverURL}/v1/audio/transcriptions`
-7. [x] No automatic fallback — engine failure shows error, user picks alternative
-8. [x] Status label reflects active engine ("Sending to server..." / "Processing on device..." / "Listening...")
-9. [x] All existing tests pass, both iOS and macOS build
+1. [x] Check-in number fields accept decimal input (e.g., `5.5`) on both iOS and macOS
+2. [x] `Cmd+=` zooms in, `Cmd+-` zooms out, `Cmd+0` resets — all scale diary text + UI
+3. [x] Zoom slider in Settings > Appearance shows current scale % with reset button
+4. [x] Vim mode toggle in Settings > Appearance, off by default
+5. [x] When vim mode on: block cursor in normal mode, bar cursor in insert mode
+6. [x] Vim motions work: `hjkl`, `w`, `b`, `e`, `0`, `$`, `gg`, `G`
+7. [x] Vim editing works: `dd`, `yy`, `p`, `x`, `ciw`, `dw`, `o`, `O`
+8. [x] Vim search works: `/pattern`, `n`, `N`
+9. [x] Vim visual mode works: `v`/`V` select, `d`/`y` on selection
+10. [x] Status bar shows mode + pending command
+11. [x] Escape returns to normal mode from any mode
+12. [x] All existing tests pass, both iOS and macOS build
+
+## Risks/Unknowns
+
+- NSTextView cursor styling (block vs bar) may require custom drawing via `insertionPointColor` + `drawInsertionPoint` override
+- `Cmd+=` may conflict with macOS system zoom — need to test; may need to use `.commands` group ordering
+- VimEngine is a significant state machine — initial release covers core commands, not full vim compatibility
