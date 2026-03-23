@@ -1,5 +1,40 @@
 # Progress Log
 
+## Session: 2026-03-23 — Vim Mode + Zoom + Decimal Check-Ins
+
+### Work Log
+- Wave 1: Fixed decimal input in 3 files — changed `format: .number` to `.number.precision(.fractionLength(0...2))` in EntryDetailView (iOS), CheckInSectionView (macOS), EntryEditorView (macOS)
+- Wave 2: Created `FontScaleEnvironment.swift` — custom EnvironmentKey + ScaledFont ViewModifier
+- Wave 3: Wired fontScale into ForeverDiaryMacApp (AppStorage + environment injection), added Cmd+/- /0 zoom shortcuts, applied scale to editor + placeholder + headers
+- Wave 4: Added zoom slider + reset button + vim mode toggle to SettingsMacView AppearanceTab
+- Wave 5: Created VimEngine.swift (state machine in ForeverDiary/Services/ for testability), VimTextView.swift (NSViewRepresentable + VimNSTextView with block cursor), VimStatusBar.swift
+- Wave 6: Integrated vim mode into EntryEditorView — conditional VimTextView vs TextEditor based on @AppStorage("vimMode")
+- Wave 7: xcodegen generate, iOS BUILD SUCCEEDED, macOS BUILD SUCCEEDED, 247/247 tests pass (50 new VimEngine tests)
+- Build fixes: FontScaleEnvironment argument order (weight before design), CommandGroupPlacement.textSize doesn't exist (used .toolbar), NSString subscript instead of String integer range
+
+### Files Created
+- ForeverDiary/Services/VimEngine.swift
+- ForeverDiaryMac/FontScaleEnvironment.swift
+- ForeverDiaryMac/Views/Editor/VimTextView.swift
+- ForeverDiaryMac/Views/Editor/VimStatusBar.swift
+- ForeverDiaryTests/VimEngineTests.swift
+
+### Files Modified
+- ForeverDiary/Views/Entry/EntryDetailView.swift (decimal format precision)
+- ForeverDiaryMac/Views/Editor/CheckInSectionView.swift (decimal format precision)
+- ForeverDiaryMac/Views/Editor/EntryEditorView.swift (decimal, fontScale, vim mode integration)
+- ForeverDiaryMac/App/ForeverDiaryMacApp.swift (fontScale, zoom shortcuts)
+- ForeverDiaryMac/Views/Settings/SettingsMacView.swift (zoom slider, vim toggle)
+
+### Test Results
+| Command | Expected | Actual | Status |
+|---------|----------|--------|--------|
+| xcodebuild build iOS (iPhone 16e) | BUILD SUCCEEDED | BUILD SUCCEEDED | PASS |
+| xcodebuild build macOS | BUILD SUCCEEDED | BUILD SUCCEEDED | PASS |
+| xcodebuild test iOS (iPhone 16e) | 247/247 pass | 247/247 pass | PASS |
+
+---
+
 ## Session: 2026-03-13 — Offload Dictation Processing (Local Server + Engine Selector)
 
 ### Work Log

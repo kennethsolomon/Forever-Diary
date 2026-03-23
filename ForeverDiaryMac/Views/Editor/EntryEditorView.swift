@@ -8,10 +8,13 @@ struct EntryEditorView: View {
     let entry: DiaryEntry?
 
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.fontScale) private var fontScale
     @Environment(SyncService.self) private var syncService
     @Environment(SpeechService.self) private var speechService
     @Environment(NetworkMonitor.self) private var networkMonitor
 
+    @AppStorage("vimMode") private var vimMode: Bool = false
+    @State private var vimEngine = VimEngine()
     @State private var diaryText = ""
     @State private var locationText = ""
     @State private var saveTask: Task<Void, Never>?
@@ -73,21 +76,30 @@ struct EntryEditorView: View {
                     )
 
                     // Diary text
-                    ZStack(alignment: .topLeading) {
-                        if diaryText.isEmpty {
-                            Text("What's on your mind today?")
-                                .font(.system(.body, design: .serif))
-                                .foregroundStyle(Color("textSecondary").opacity(0.5))
-                                .padding(.top, 8)
-                                .padding(.leading, 4)
-                                .allowsHitTesting(false)
+                    if vimMode {
+                        VStack(spacing: 0) {
+                            VimTextView(text: $diaryText, vimEngine: vimEngine, fontScale: fontScale)
+                                .frame(minHeight: 250)
+                                .onChange(of: diaryText) { _, newValue in debounceSave(text: newValue) }
+                            VimStatusBar(mode: vimEngine.currentMode, pendingCommand: vimEngine.pendingCommand)
                         }
-                        TextEditor(text: $diaryText)
-                            .font(.system(.body, design: .serif))
-                            .foregroundStyle(Color("textPrimary"))
-                            .scrollContentBackground(.hidden)
-                            .frame(minHeight: 250)
-                            .onChange(of: diaryText) { _, newValue in debounceSave(text: newValue) }
+                    } else {
+                        ZStack(alignment: .topLeading) {
+                            if diaryText.isEmpty {
+                                Text("What's on your mind today?")
+                                    .font(.system(size: 17 * fontScale, design: .serif))
+                                    .foregroundStyle(Color("textSecondary").opacity(0.5))
+                                    .padding(.top, 8)
+                                    .padding(.leading, 4)
+                                    .allowsHitTesting(false)
+                            }
+                            TextEditor(text: $diaryText)
+                                .font(.system(size: 17 * fontScale, design: .serif))
+                                .foregroundStyle(Color("textPrimary"))
+                                .scrollContentBackground(.hidden)
+                                .frame(minHeight: 250)
+                                .onChange(of: diaryText) { _, newValue in debounceSave(text: newValue) }
+                        }
                     }
 
                     // Check-ins section
@@ -155,10 +167,10 @@ struct EntryEditorView: View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry?.weekday ?? computedWeekday)
-                    .font(.system(.title2, design: .rounded, weight: .semibold))
+                    .font(.system(size: 22 * fontScale, weight: .semibold, design: .rounded))
                     .foregroundStyle(Color("textPrimary"))
                 Text("\(formattedDate), \(String(year))")
-                    .font(.system(.subheadline, design: .rounded))
+                    .font(.system(size: 13 * fontScale, design: .rounded))
                     .foregroundStyle(Color("textSecondary"))
             }
             Spacer()
@@ -323,7 +335,7 @@ struct EntryEditorView: View {
                 TextField("0", value: Binding(
                     get: { value?.numberValue ?? 0 },
                     set: { newVal in updateCheckIn(template: template, entry: entry, number: newVal) }
-                ), format: .number)
+                ), format: .number.precision(.fractionLength(0...2)))
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 80)
             }

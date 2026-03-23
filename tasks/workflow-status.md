@@ -10,11 +10,11 @@
 | 3 | /brainstorm | done | 3 features scoped: full vim mode (NSTextView), zoom (AppStorage scale), decimal fix (format precision) |
 | 4 | /frontend-design | skipped | user opted to skip — standard macOS patterns, no custom UI design needed |
 | 5 | /write-plan | done | 17 tasks, 7 waves, 3 milestones: decimal fix, zoom, vim mode |
-| 6 | /branch | >> next << | |
-| 7 | /schema-migrate | not yet | |
-| 8 | /write-tests | not yet | |
-| 9 | /execute-plan | not yet | |
-| 10 | /smart-commit | not yet | |
+| 6 | /branch | done | `feature/vim-zoom-decimal-checkins` from main |
+| 7 | /schema-migrate | skipped | no model/schema changes — numberValue already Double, features are view/UI-only |
+| 8 | /write-tests | done | 45 tests in VimEngineTests.swift, RED phase confirmed (VimEngine not implemented) |
+| 9 | /execute-plan | done | all 17 tasks complete, 247/247 tests pass, iOS + macOS build |
+| 10 | /smart-commit | >> next << | |
 | 11 | /lint | not yet | |
 | 12 | /smart-commit | not yet | |
 | 13 | /test | not yet | |
