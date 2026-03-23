@@ -94,6 +94,9 @@ struct VimTextView: NSViewRepresentable {
         func updateCursorStyle(textView: VimNSTextView, mode: VimMode) {
             let isBlock = (mode == .normal || mode == .visual || mode == .visualLine)
             textView.useBlockCursor = isBlock
+            textView.insertionPointColor = isBlock
+                ? .clear
+                : (NSColor(named: "accentBright") ?? .controlAccentColor)
             textView.updateBlockCursorPosition()
         }
     }
