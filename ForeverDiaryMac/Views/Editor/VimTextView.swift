@@ -2,9 +2,17 @@ import SwiftUI
 import AppKit
 
 struct VimTextView: NSViewRepresentable {
+    private static let baseFontSize: CGFloat = 17
+    private static let serifFontName = "Georgia"
+
     @Binding var text: String
     var vimEngine: VimEngine
     var fontScale: Double
+
+    private static func diaryFont(scale: Double) -> NSFont {
+        let size = baseFontSize * scale
+        return NSFont(name: serifFontName, size: size) ?? NSFont.systemFont(ofSize: size)
+    }
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSScrollView()
@@ -26,13 +34,10 @@ struct VimTextView: NSViewRepresentable {
         textView.isAutomaticTextReplacementEnabled = false
         textView.usesFindBar = true
 
-        textView.font = NSFont.systemFont(ofSize: 17 * fontScale)
-        if let serif = NSFont(name: "Georgia", size: 17 * fontScale) {
-            textView.font = serif
-        }
-
+        textView.font = Self.diaryFont(scale: fontScale)
         textView.textColor = NSColor(named: "textPrimary") ?? .textColor
         textView.insertionPointColor = NSColor(named: "accentBright") ?? .controlAccentColor
+        textView.currentFontScale = fontScale
 
         textView.string = text
         textView.delegate = context.coordinator
@@ -64,18 +69,15 @@ struct VimTextView: NSViewRepresentable {
             textView.selectedRanges = selectedRanges
         }
 
-        // Update font scale
-        let fontSize = 17 * fontScale
-        if let serif = NSFont(name: "Georgia", size: fontSize) {
-            textView.font = serif
-        } else {
-            textView.font = NSFont.systemFont(ofSize: fontSize)
+        // Update font only when scale changes
+        if textView.currentFontScale != fontScale {
+            textView.font = Self.diaryFont(scale: fontScale)
+            textView.currentFontScale = fontScale
         }
 
         // Update cursor style
         context.coordinator.updateCursorStyle(textView: textView, mode: vimEngine.currentMode)
 
-        // In normal mode, disable editing so keys go through keyDown
         textView.vimEngine = vimEngine
     }
 
@@ -110,6 +112,7 @@ class VimNSTextView: NSTextView {
     var vimEngine: VimEngine?
     weak var coordinator: VimTextView.Coordinator?
     var useBlockCursor = false
+    var currentFontScale: Double = 1.0
 
     override func keyDown(with event: NSEvent) {
         guard let engine = vimEngine else {

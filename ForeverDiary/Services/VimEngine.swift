@@ -114,6 +114,24 @@ final class VimEngine {
 
     // MARK: - Normal Mode
 
+    private func motionForKey(_ key: String) -> VimAction? {
+        switch key {
+        case "h": return .moveCursor(.left)
+        case "j": return .moveCursor(.down)
+        case "k": return .moveCursor(.up)
+        case "l": return .moveCursor(.right)
+        case "w": return .moveCursor(.wordForward)
+        case "b": return .moveCursor(.wordBackward)
+        case "e": return .moveCursor(.wordEnd)
+        case "0": return .moveCursor(.lineStart)
+        case "$": return .moveCursor(.lineEnd)
+        case "G": return .moveCursor(.documentEnd)
+        case "{": return .moveCursor(.paragraphUp)
+        case "}": return .moveCursor(.paragraphDown)
+        default: return nil
+        }
+    }
+
     private func processNormalMode(_ key: String, modifiers: ModifierFlags) -> VimAction {
         // Ctrl+R → redo
         if key == "r" && modifiers.contains(.control) {
@@ -123,6 +141,11 @@ final class VimEngine {
         // Handle pending operator
         if !pendingCommand.isEmpty {
             return processPendingCommand(key)
+        }
+
+        // Motions
+        if let motion = motionForKey(key) {
+            return motion
         }
 
         // Mode entry keys
@@ -151,20 +174,6 @@ final class VimEngine {
         case "V":
             currentMode = .visualLine
             return .changeMode(.visualLine)
-
-        // Motions
-        case "h": return .moveCursor(.left)
-        case "j": return .moveCursor(.down)
-        case "k": return .moveCursor(.up)
-        case "l": return .moveCursor(.right)
-        case "w": return .moveCursor(.wordForward)
-        case "b": return .moveCursor(.wordBackward)
-        case "e": return .moveCursor(.wordEnd)
-        case "0": return .moveCursor(.lineStart)
-        case "$": return .moveCursor(.lineEnd)
-        case "G": return .moveCursor(.documentEnd)
-        case "{": return .moveCursor(.paragraphUp)
-        case "}": return .moveCursor(.paragraphDown)
 
         // Single-key edits
         case "x": return .deleteChar
@@ -252,29 +261,18 @@ final class VimEngine {
     // MARK: - Visual Mode
 
     private func processVisualMode(_ key: String, modifiers: ModifierFlags) -> VimAction {
+        // Motions extend selection
+        if let motion = motionForKey(key) {
+            return motion
+        }
+
         switch key {
-        // Operations on selection
         case "d":
             currentMode = .normal
             return .deleteSelection
         case "y":
             currentMode = .normal
             return .yankSelection
-
-        // Motions extend selection
-        case "h": return .moveCursor(.left)
-        case "j": return .moveCursor(.down)
-        case "k": return .moveCursor(.up)
-        case "l": return .moveCursor(.right)
-        case "w": return .moveCursor(.wordForward)
-        case "b": return .moveCursor(.wordBackward)
-        case "e": return .moveCursor(.wordEnd)
-        case "0": return .moveCursor(.lineStart)
-        case "$": return .moveCursor(.lineEnd)
-        case "G": return .moveCursor(.documentEnd)
-        case "{": return .moveCursor(.paragraphUp)
-        case "}": return .moveCursor(.paragraphDown)
-
         default:
             return .noop
         }
